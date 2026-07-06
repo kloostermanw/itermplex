@@ -27,6 +27,16 @@ final class ProjectStore {
         save()
     }
 
+    func remove(_ project: Project) {
+        projects.removeAll { $0.id == project.id }
+        save()
+    }
+
+    func move(fromOffsets: IndexSet, toOffset: Int) {
+        projects.move(fromOffsets: fromOffsets, toOffset: toOffset)
+        save()
+    }
+
     private func load() {
         guard let dataArray = defaults.array(forKey: storageKey) as? [Data] else { return }
         var loaded: [Project] = []
