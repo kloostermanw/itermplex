@@ -47,12 +47,12 @@ final class ProjectStore {
     }
 
     func openTerminal(for project: Project) async {
-        guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
+        guard let preIndex = projects.firstIndex(where: { $0.id == project.id }) else { return }
+        let folder = projects[preIndex].url
+        let existingWindowId = projects[preIndex].windowId
         do {
-            let handle = try await service.open(
-                folder: projects[index].url,
-                existingWindowId: projects[index].windowId
-            )
+            let handle = try await service.open(folder: folder, existingWindowId: existingWindowId)
+            guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
             let sequence = projects[index].terminalSeq + 1
             projects[index].terminalSeq = sequence
             projects[index].windowId = handle.windowId
