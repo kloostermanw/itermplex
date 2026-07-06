@@ -22,6 +22,7 @@ struct ContentView: View {
                     Image(systemName: "folder.badge.plus")
                 }
                 .help("Add project folder")
+                .accessibilityLabel("Add project folder")
             }
         }
         .navigationTitle("")
