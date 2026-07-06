@@ -65,6 +65,54 @@ final class ProjectStore {
         }
     }
 
+    func activate(_ ref: TerminalRef, in project: Project) async {
+        guard let prePIndex = projects.firstIndex(where: { $0.id == project.id }),
+              let preTIndex = projects[prePIndex].terminals.firstIndex(where: { $0.id == ref.id }) else { return }
+        let sessionId = projects[prePIndex].terminals[preTIndex].sessionId
+        let folder = projects[prePIndex].url
+        let existingWindowId = projects[prePIndex].windowId
+        do {
+            let found = try await service.focus(sessionId: sessionId)
+            if !found {
+                let handle = try await service.open(folder: folder, existingWindowId: existingWindowId)
+                guard let pIndex = projects.firstIndex(where: { $0.id == project.id }),
+                      let tIndex = projects[pIndex].terminals.firstIndex(where: { $0.id == ref.id }) else { return }
+                projects[pIndex].windowId = handle.windowId
+                projects[pIndex].terminals[tIndex].sessionId = handle.sessionId
+                save()
+            }
+        } catch {
+            lastError = (error as? TerminalError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    func rename(_ ref: TerminalRef, in project: Project, to label: String) {
+        guard let pIndex = projects.firstIndex(where: { $0.id == project.id }),
+              let tIndex = projects[pIndex].terminals.firstIndex(where: { $0.id == ref.id }) else { return }
+        projects[pIndex].terminals[tIndex].label = label
+        save()
+    }
+
+    func removeTerminal(_ ref: TerminalRef, in project: Project) {
+        guard let pIndex = projects.firstIndex(where: { $0.id == project.id }) else { return }
+        projects[pIndex].terminals.removeAll { $0.id == ref.id }
+        save()
+    }
+
+    func closeTerminal(_ ref: TerminalRef, in project: Project) async {
+        guard let prePIndex = projects.firstIndex(where: { $0.id == project.id }),
+              let preTIndex = projects[prePIndex].terminals.firstIndex(where: { $0.id == ref.id }) else { return }
+        let sessionId = projects[prePIndex].terminals[preTIndex].sessionId
+        do {
+            try await service.close(sessionId: sessionId)
+            guard let pIndex = projects.firstIndex(where: { $0.id == project.id }) else { return }
+            projects[pIndex].terminals.removeAll { $0.id == ref.id }
+            save()
+        } catch {
+            lastError = (error as? TerminalError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
     private func load() {
         guard let dataArray = defaults.array(forKey: storageKey) as? [Data] else { return }
         let decoder = JSONDecoder()

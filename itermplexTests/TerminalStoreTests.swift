@@ -99,4 +99,88 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
         #expect(store.projects[0].terminals.isEmpty)
         #expect(store.lastError == TerminalError.apiDisabled.errorDescription)
     }
+
+    @Test func activateLiveSessionOnlyFocuses() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openTerminal(for: store.projects[0])
+
+        fake.focusReturns = true
+        await store.activate(store.projects[0].terminals[0], in: store.projects[0])
+        #expect(fake.focusCalls == ["sess-A"])
+        #expect(fake.openCalls.count == 1) // no reopen
+    }
+
+    @Test func activateDeadSessionReopensAndRebinds() async {
+        let fake = FakeTerminalService()
+        fake.handles = [
+            TerminalHandle(sessionId: "sess-A", windowId: "win-1"),
+            TerminalHandle(sessionId: "sess-B", windowId: "win-2"),
+        ]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openTerminal(for: store.projects[0])
+
+        fake.focusReturns = false
+        await store.activate(store.projects[0].terminals[0], in: store.projects[0])
+        #expect(fake.focusCalls == ["sess-A"])
+        #expect(fake.openCalls.count == 2)
+        #expect(store.projects[0].terminals[0].sessionId == "sess-B")
+        #expect(store.projects[0].windowId == "win-2")
+        #expect(store.projects[0].terminals[0].label == "Terminal 1") // label unchanged
+    }
+
+    @Test func renameChangesLabelAndPersists() async {
+        let defaults = makeDefaults()
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store1 = ProjectStore(defaults: defaults, service: fake)
+        store1.addProject(url: makeTempFolder(named: "proj"))
+        await store1.openTerminal(for: store1.projects[0])
+
+        store1.rename(store1.projects[0].terminals[0], in: store1.projects[0], to: "server")
+        #expect(store1.projects[0].terminals[0].label == "server")
+
+        let store2 = ProjectStore(defaults: defaults, service: FakeTerminalService())
+        #expect(store2.projects[0].terminals[0].label == "server")
+    }
+
+    @Test func removeTerminalForgetsWithoutClosing() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openTerminal(for: store.projects[0])
+
+        store.removeTerminal(store.projects[0].terminals[0], in: store.projects[0])
+        #expect(store.projects[0].terminals.isEmpty)
+        #expect(fake.closeCalls.isEmpty)
+    }
+
+    @Test func closeTerminalClosesSessionThenForgets() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openTerminal(for: store.projects[0])
+
+        await store.closeTerminal(store.projects[0].terminals[0], in: store.projects[0])
+        #expect(fake.closeCalls == ["sess-A"])
+        #expect(store.projects[0].terminals.isEmpty)
+    }
+
+    @Test func closeTerminalFailureKeepsRef() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openTerminal(for: store.projects[0])
+
+        fake.errorToThrow = .bridgeFailed("boom")
+        await store.closeTerminal(store.projects[0].terminals[0], in: store.projects[0])
+        #expect(store.projects[0].terminals.count == 1)
+        #expect(store.lastError == "boom")
+    }
 }
