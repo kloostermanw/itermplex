@@ -1,0 +1,42 @@
+name: itermplex
+options:
+  bundleIdPrefix: com.celerypayroll
+  deploymentTarget:
+    macOS: "14.0"
+targets:
+  itermplex:
+    type: application
+    platform: macOS
+    sources: [itermplex]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.celerypayroll.itermplex
+        GENERATE_INFOPLIST_FILE: YES
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGNING_ALLOWED: NO
+  itermplexTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [itermplexTests]
+    dependencies:
+      - target: itermplex
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.celerypayroll.itermplexTests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGNING_ALLOWED: NO
+schemes:
+  itermplex:
+    build:
+      targets:
+        itermplex: all
+        itermplexTests: [test]
+    test:
+      targets:
+        - itermplexTests
