@@ -183,4 +183,14 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
         #expect(store.projects[0].terminals.count == 1)
         #expect(store.lastError == "boom")
     }
+
+    @Test func renameToNonEmptyLabelUpdatesRef() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openTerminal(for: store.projects[0])
+        store.rename(store.projects[0].terminals[0], in: store.projects[0], to: "api")
+        #expect(store.projects[0].terminals[0].label == "api")
+    }
 }

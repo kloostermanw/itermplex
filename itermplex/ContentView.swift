@@ -31,6 +31,7 @@ struct ContentView: View {
         }
         .listStyle(.sidebar)
         .frame(minWidth: 240)
+        .disabled(isBusy)
         .overlay {
             if isBusy {
                 ProgressView().controlSize(.small)
@@ -51,7 +52,10 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) { renameTarget = nil }
             Button("Rename") {
                 if let target = renameTarget {
-                    store.rename(target.ref, in: target.project, to: renameText)
+                    let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        store.rename(target.ref, in: target.project, to: trimmed)
+                    }
                 }
                 renameTarget = nil
             }

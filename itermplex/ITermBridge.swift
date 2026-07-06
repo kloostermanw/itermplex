@@ -52,6 +52,9 @@ struct ITermBridge: TerminalService {
         )
         if result.status != 0 {
             let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            if message.lowercased().contains("connect") {
+                throw TerminalError.apiDisabled
+            }
             throw TerminalError.bridgeFailed(message.isEmpty ? "iTerm2 bridge failed." : message)
         }
         guard let data = result.stdout.data(using: .utf8),
