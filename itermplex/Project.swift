@@ -9,6 +9,11 @@ struct Project: Identifiable, Equatable {
 
     var name: String { url.lastPathComponent }
 
+    /// True when the folder is a git repository (has a `.git` directory or file).
+    var isGitRepository: Bool {
+        FileManager.default.fileExists(atPath: url.appendingPathComponent(".git").path)
+    }
+
     init(
         id: UUID = UUID(),
         url: URL,
