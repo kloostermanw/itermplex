@@ -13,7 +13,7 @@ import argparse
 import iterm2
 
 
-async def _open(connection, folder, window_id):
+async def _open(connection, folder, window_id, command):
     app = await iterm2.async_get_app(connection)
     window = app.get_window_by_id(window_id) if window_id else None
     if window is not None:
@@ -23,6 +23,8 @@ async def _open(connection, folder, window_id):
         window = await iterm2.Window.async_create(connection)
         session = window.current_tab.current_session
     await session.async_send_text("cd " + shlex.quote(folder) + "\n")
+    if command:
+        await session.async_send_text(command + "\n")
     return {"session_id": session.session_id, "window_id": window.window_id}
 
 
@@ -46,10 +48,11 @@ async def _close(connection, session_id):
 
 def main():
     parser = argparse.ArgumentParser(description="itermplex iTerm2 bridge")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="subcommand", required=True)
     p_open = sub.add_parser("open")
     p_open.add_argument("folder")
     p_open.add_argument("--window", dest="window", default=None)
+    p_open.add_argument("--command", dest="command", default=None)
     p_focus = sub.add_parser("focus")
     p_focus.add_argument("session_id")
     p_close = sub.add_parser("close")
@@ -59,11 +62,11 @@ def main():
     holder = {}
 
     async def run(connection):
-        if args.command == "open":
-            holder["value"] = await _open(connection, args.folder, args.window)
-        elif args.command == "focus":
+        if args.subcommand == "open":
+            holder["value"] = await _open(connection, args.folder, args.window, args.command)
+        elif args.subcommand == "focus":
             holder["value"] = await _focus(connection, args.session_id)
-        elif args.command == "close":
+        elif args.subcommand == "close":
             holder["value"] = await _close(connection, args.session_id)
 
     try:

@@ -16,7 +16,7 @@ private struct LegacyStored: Codable {
 }
 
 final class FakeTerminalService: TerminalService, @unchecked Sendable {
-    var openCalls: [(folder: URL, existingWindowId: String?)] = []
+    var openCalls: [(folder: URL, existingWindowId: String?, command: String?)] = []
     var focusCalls: [String] = []
     var closeCalls: [String] = []
     var handles: [TerminalHandle] = []
@@ -24,9 +24,9 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
     var errorToThrow: TerminalError?
     private var openIndex = 0
 
-    func open(folder: URL, existingWindowId: String?) async throws -> TerminalHandle {
+    func open(folder: URL, existingWindowId: String?, command: String?) async throws -> TerminalHandle {
         if let error = errorToThrow { throw error }
-        openCalls.append((folder, existingWindowId))
+        openCalls.append((folder, existingWindowId, command))
         let handle = openIndex < handles.count
             ? handles[openIndex]
             : TerminalHandle(sessionId: "sess-\(openIndex + 1)", windowId: "win-1")

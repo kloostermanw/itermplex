@@ -82,7 +82,7 @@ final class ProjectStore {
         let folder = projects[preIndex].url
         let existingWindowId = projects[preIndex].windowId
         do {
-            let handle = try await service.open(folder: folder, existingWindowId: existingWindowId)
+            let handle = try await service.open(folder: folder, existingWindowId: existingWindowId, command: nil)
             guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
             let sequence = projects[index].terminalSeq + 1
             projects[index].terminalSeq = sequence
@@ -105,7 +105,7 @@ final class ProjectStore {
         do {
             let found = try await service.focus(sessionId: sessionId)
             if !found {
-                let handle = try await service.open(folder: folder, existingWindowId: existingWindowId)
+                let handle = try await service.open(folder: folder, existingWindowId: existingWindowId, command: nil)
                 guard let pIndex = projects.firstIndex(where: { $0.id == project.id }),
                       let tIndex = projects[pIndex].terminals.firstIndex(where: { $0.id == ref.id }) else { return }
                 projects[pIndex].windowId = handle.windowId

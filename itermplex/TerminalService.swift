@@ -35,7 +35,7 @@ enum TerminalError: LocalizedError, Equatable {
 }
 
 protocol TerminalService: Sendable {
-    func open(folder: URL, existingWindowId: String?) async throws -> TerminalHandle
+    func open(folder: URL, existingWindowId: String?, command: String?) async throws -> TerminalHandle
     func focus(sessionId: String) async throws -> Bool
     func close(sessionId: String) async throws
 }
