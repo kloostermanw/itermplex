@@ -78,17 +78,34 @@ final class ProjectStore {
     }
 
     func openTerminal(for project: Project) async {
+        await openSession(for: project, command: nil, kind: .terminal)
+    }
+
+    func openClaude(for project: Project) async {
+        await openSession(for: project, command: "claude", kind: .claude)
+    }
+
+    private func openSession(for project: Project, command: String?, kind: TerminalKind) async {
         guard let preIndex = projects.firstIndex(where: { $0.id == project.id }) else { return }
         let folder = projects[preIndex].url
         let existingWindowId = projects[preIndex].windowId
         do {
-            let handle = try await service.open(folder: folder, existingWindowId: existingWindowId, command: nil)
+            let handle = try await service.open(
+                folder: folder, existingWindowId: existingWindowId, command: command
+            )
             guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
-            let sequence = projects[index].terminalSeq + 1
-            projects[index].terminalSeq = sequence
+            let label: String
+            switch kind {
+            case .terminal:
+                projects[index].terminalSeq += 1
+                label = "Terminal \(projects[index].terminalSeq)"
+            case .claude:
+                projects[index].claudeSeq += 1
+                label = "Claude \(projects[index].claudeSeq)"
+            }
             projects[index].windowId = handle.windowId
             projects[index].terminals.append(
-                TerminalRef(label: "Terminal \(sequence)", sessionId: handle.sessionId)
+                TerminalRef(label: label, sessionId: handle.sessionId, kind: kind)
             )
             save()
         } catch {

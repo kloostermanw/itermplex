@@ -104,6 +104,51 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
         #expect(fake.openCalls[1].existingWindowId == "win-1")
     }
 
+    @Test func openClaudeAppendsClaudeRefAndRunsClaude() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+
+        await store.openClaude(for: store.projects[0])
+        #expect(store.projects[0].terminals.map(\.label) == ["Claude 1"])
+        #expect(store.projects[0].terminals[0].kind == .claude)
+        #expect(store.projects[0].terminals[0].sessionId == "sess-A")
+        #expect(store.projects[0].claudeSeq == 1)
+        #expect(fake.openCalls.count == 1)
+        #expect(fake.openCalls[0].command == "claude")
+    }
+
+    @Test func openTerminalPassesNilCommand() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+
+        await store.openTerminal(for: store.projects[0])
+        #expect(store.projects[0].terminals[0].kind == .terminal)
+        #expect(fake.openCalls[0].command == nil)
+    }
+
+    @Test func terminalAndClaudeUseIndependentNumbering() async {
+        let fake = FakeTerminalService()
+        fake.handles = [
+            TerminalHandle(sessionId: "s1", windowId: "win-1"),
+            TerminalHandle(sessionId: "s2", windowId: "win-1"),
+            TerminalHandle(sessionId: "s3", windowId: "win-1"),
+            TerminalHandle(sessionId: "s4", windowId: "win-1"),
+        ]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+
+        await store.openTerminal(for: store.projects[0])
+        await store.openClaude(for: store.projects[0])
+        await store.openTerminal(for: store.projects[0])
+        await store.openClaude(for: store.projects[0])
+        #expect(store.projects[0].terminals.map(\.label)
+            == ["Terminal 1", "Claude 1", "Terminal 2", "Claude 2"])
+    }
+
     @Test func terminalsPersistAcrossStoreInstances() async {
         let defaults = makeDefaults()
         let fake = FakeTerminalService()
