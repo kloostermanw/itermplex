@@ -2,6 +2,19 @@ import Testing
 import Foundation
 @testable import itermplex
 
+private struct LegacyRef: Codable {
+    var id: UUID
+    var label: String
+    var sessionId: String
+}
+
+private struct LegacyStored: Codable {
+    var bookmark: Data
+    var terminals: [LegacyRef]
+    var terminalSeq: Int
+    var windowId: String?
+}
+
 final class FakeTerminalService: TerminalService, @unchecked Sendable {
     var openCalls: [(folder: URL, existingWindowId: String?)] = []
     var focusCalls: [String] = []
@@ -50,6 +63,7 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
         #expect(project.terminals.isEmpty)
         #expect(project.windowId == nil)
         #expect(project.terminalSeq == 0)
+        #expect(project.claudeSeq == 0)
     }
 
     @Test func decodesLegacyTerminalRefWithoutKind() throws {
@@ -209,5 +223,29 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
         await store.openTerminal(for: store.projects[0])
         store.rename(store.projects[0].terminals[0], in: store.projects[0], to: "api")
         #expect(store.projects[0].terminals[0].label == "api")
+    }
+
+    @Test func loadsLegacyProjectWithoutClaudeSeqOrKind() throws {
+        let defaults = makeDefaults()
+        let folder = makeTempFolder(named: "proj")
+        let bookmark = try folder.bookmarkData(
+            options: [], includingResourceValuesForKeys: nil, relativeTo: nil
+        )
+        let legacy = LegacyStored(
+            bookmark: bookmark,
+            terminals: [LegacyRef(id: UUID(), label: "Terminal 1", sessionId: "sess-A")],
+            terminalSeq: 1,
+            windowId: "win-1"
+        )
+        let data = try JSONEncoder().encode(legacy)
+        // Storage key is private to ProjectStore; kept in sync intentionally.
+        defaults.set([data], forKey: "itermplex.projects.bookmarks")
+
+        let store = ProjectStore(defaults: defaults, service: FakeTerminalService())
+        #expect(store.projects.count == 1)
+        #expect(store.projects[0].terminals.map(\.label) == ["Terminal 1"])
+        #expect(store.projects[0].terminals[0].kind == .terminal)
+        #expect(store.projects[0].terminalSeq == 1)
+        #expect(store.projects[0].claudeSeq == 0)
     }
 }

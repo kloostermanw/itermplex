@@ -6,6 +6,7 @@ struct Project: Identifiable, Equatable {
     var terminals: [TerminalRef]
     var windowId: String?
     var terminalSeq: Int
+    var claudeSeq: Int
 
     var name: String { url.lastPathComponent }
 
@@ -19,12 +20,14 @@ struct Project: Identifiable, Equatable {
         url: URL,
         terminals: [TerminalRef] = [],
         windowId: String? = nil,
-        terminalSeq: Int = 0
+        terminalSeq: Int = 0,
+        claudeSeq: Int = 0
     ) {
         self.id = id
         self.url = url
         self.terminals = terminals
         self.windowId = windowId
         self.terminalSeq = terminalSeq
+        self.claudeSeq = claudeSeq
     }
 }

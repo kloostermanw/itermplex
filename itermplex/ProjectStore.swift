@@ -18,7 +18,29 @@ final class ProjectStore {
         var bookmark: Data
         var terminals: [TerminalRef]
         var terminalSeq: Int
+        var claudeSeq: Int
         var windowId: String?
+
+        init(bookmark: Data, terminals: [TerminalRef], terminalSeq: Int, claudeSeq: Int, windowId: String?) {
+            self.bookmark = bookmark
+            self.terminals = terminals
+            self.terminalSeq = terminalSeq
+            self.claudeSeq = claudeSeq
+            self.windowId = windowId
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case bookmark, terminals, terminalSeq, claudeSeq, windowId
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            bookmark = try container.decode(Data.self, forKey: .bookmark)
+            terminals = try container.decode([TerminalRef].self, forKey: .terminals)
+            terminalSeq = try container.decode(Int.self, forKey: .terminalSeq)
+            claudeSeq = try container.decodeIfPresent(Int.self, forKey: .claudeSeq) ?? 0
+            windowId = try container.decodeIfPresent(String.self, forKey: .windowId)
+        }
     }
 
     init(
@@ -178,7 +200,8 @@ final class ProjectStore {
                 url: url.standardizedFileURL,
                 terminals: record.terminals,
                 windowId: record.windowId,
-                terminalSeq: record.terminalSeq
+                terminalSeq: record.terminalSeq,
+                claudeSeq: record.claudeSeq
             ))
         }
         projects = loaded
@@ -194,6 +217,7 @@ final class ProjectStore {
                 bookmark: bookmark,
                 terminals: project.terminals,
                 terminalSeq: project.terminalSeq,
+                claudeSeq: project.claudeSeq,
                 windowId: project.windowId
             )
             return try? encoder.encode(record)
