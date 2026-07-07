@@ -10,3 +10,4 @@ For questions about GitHub, use the gh tool Never mention Claude Code in PR desc
 ## Git
 use /create-commit to create a commit message
 use /create-pr to create a pr message
+Never mention Claude Code in PR descriptions, PR comments, or issue comments
