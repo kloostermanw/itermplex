@@ -52,6 +52,23 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
         #expect(project.terminalSeq == 0)
     }
 
+    @Test func decodesLegacyTerminalRefWithoutKind() throws {
+        let json = Data("""
+        {"id":"\(UUID().uuidString)","label":"Terminal 1","sessionId":"sess-A"}
+        """.utf8)
+        let ref = try JSONDecoder().decode(TerminalRef.self, from: json)
+        #expect(ref.kind == .terminal)
+        #expect(ref.label == "Terminal 1")
+        #expect(ref.sessionId == "sess-A")
+    }
+
+    @Test func encodesAndDecodesClaudeKind() throws {
+        let ref = TerminalRef(label: "Claude 1", sessionId: "s", kind: .claude)
+        let data = try JSONEncoder().encode(ref)
+        let decoded = try JSONDecoder().decode(TerminalRef.self, from: data)
+        #expect(decoded.kind == .claude)
+    }
+
     @Test func openTerminalAppendsNumberedRefsAndTracksWindow() async {
         let fake = FakeTerminalService()
         fake.handles = [
