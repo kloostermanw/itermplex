@@ -14,6 +14,18 @@ import json
 import asyncio
 import iterm2
 
+# Strong references to in-flight tasks. asyncio.create_task() only stores a
+# weak reference on the event loop, so without this the GC can collect a
+# still-running task and silently kill its monitoring.
+_tasks = set()
+
+
+def _spawn(coro):
+    task = asyncio.create_task(coro)
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+    return task
+
 
 def _emit(obj):
     sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
@@ -58,27 +70,35 @@ async def _watch_bell(connection, session_id):
 
 
 async def _watch_session(connection, session_id):
-    await asyncio.gather(
-        _watch_title(connection, session_id),
-        _watch_job(connection, session_id),
-        _watch_bell(connection, session_id),
-    )
+    try:
+        await asyncio.gather(
+            _watch_title(connection, session_id),
+            _watch_job(connection, session_id),
+            _watch_bell(connection, session_id),
+        )
+    except Exception as exc:  # noqa: BLE001 - log and let the task end quietly
+        sys.stderr.write(f"_watch_session({session_id!r}) failed: {exc!r}\n")
+        sys.stderr.flush()
 
 
 async def _watch_terminations(connection):
-    async with iterm2.SessionTerminationMonitor(connection) as mon:
-        while True:
-            session_id = await mon.async_get()
-            _emit({"type": "terminated", "session_id": session_id})
+    try:
+        async with iterm2.SessionTerminationMonitor(connection) as mon:
+            while True:
+                session_id = await mon.async_get()
+                _emit({"type": "terminated", "session_id": session_id})
+    except Exception as exc:  # noqa: BLE001 - log and let the task end quietly
+        sys.stderr.write(f"_watch_terminations() failed: {exc!r}\n")
+        sys.stderr.flush()
 
 
 async def main(connection):
     app = await iterm2.async_get_app(connection)
-    asyncio.create_task(_watch_terminations(connection))
+    _spawn(_watch_terminations(connection))
     async with iterm2.EachSessionOnceMonitor(app) as mon:
         while True:
             session_id = await mon.async_get()
-            asyncio.create_task(_watch_session(connection, session_id))
+            _spawn(_watch_session(connection, session_id))
 
 
 iterm2.run_forever(main)
