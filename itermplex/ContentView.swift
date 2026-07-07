@@ -15,6 +15,7 @@ struct ContentView: View {
                     ProjectRowView(project: project, gitInfo: info)
                         .contextMenu {
                             Button("Terminal") { openTerminal(for: project) }
+                            Button("Claude") { openClaude(for: project) }
                             Button("Remove") { store.remove(project) }
                         }
                     if let info, info.issueNumber != nil || info.prNumber != nil {
@@ -26,7 +27,7 @@ struct ContentView: View {
                         )
                     }
                     ForEach(project.terminals) { ref in
-                        TerminalRowView(label: ref.label)
+                        TerminalRowView(label: ref.label, kind: ref.kind)
                             .onTapGesture { activate(ref, in: project) }
                             .contextMenu {
                                 Button("Rename") { startRename(ref, in: project) }
@@ -112,6 +113,14 @@ struct ContentView: View {
         Task {
             isBusy = true
             await store.openTerminal(for: project)
+            isBusy = false
+        }
+    }
+
+    private func openClaude(for project: Project) {
+        Task {
+            isBusy = true
+            await store.openClaude(for: project)
             isBusy = false
         }
     }

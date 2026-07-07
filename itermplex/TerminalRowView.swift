@@ -2,10 +2,11 @@ import SwiftUI
 
 struct TerminalRowView: View {
     let label: String
+    let kind: TerminalKind
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "terminal")
+            Image(systemName: kind == .claude ? "sparkles" : "terminal")
                 .foregroundStyle(.secondary)
             Text(label)
                 .lineLimit(1)
