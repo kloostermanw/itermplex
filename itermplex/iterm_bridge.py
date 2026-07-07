@@ -2,7 +2,7 @@
 """Bridge between itermplex and iTerm2's Python API.
 
 Subcommands (each prints one line of JSON to stdout on success):
-  open FOLDER [--window WINDOW_ID]  -> {"session_id": ..., "window_id": ...}
+  open FOLDER [--window WINDOW_ID] [--command CMD]  -> {"session_id": ..., "window_id": ...}
   focus SESSION_ID                  -> {"found": true|false}
   close SESSION_ID                  -> {"closed": true|false}
 """
