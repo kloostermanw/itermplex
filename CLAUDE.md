@@ -1,5 +1,22 @@
 # iTermPlex
 
+## Setup
+This project uses [XcodeGen](https://github.com/yonaskolb/XcodeGen). `project.yml` is the source of truth for the Xcode project; `itermplex.xcodeproj/` is generated and gitignored.
+
+After cloning, or whenever `project.yml` or the source file layout changes, regenerate the project:
+
+```sh
+brew install xcodegen   # once
+xcodegen generate
+```
+
+Build and test from the command line:
+
+```sh
+xcodebuild -scheme itermplex -destination 'platform=macOS' build
+xcodebuild -scheme itermplex -destination 'platform=macOS' test
+```
+
 ## General
 Do not tell me I am right all the time. Be critical. We're equals. Try to be neutral and objective.
 Do not excessively use emojis.
