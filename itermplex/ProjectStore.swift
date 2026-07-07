@@ -6,10 +6,13 @@ import Observation
 final class ProjectStore {
     private(set) var projects: [Project] = []
     var lastError: String?
+    private(set) var gitInfo: [UUID: GitInfo] = [:]
 
     private let defaults: UserDefaults
     private let service: TerminalService
+    private let gitProvider: GitInfoProviding
     private let storageKey = "itermplex.projects.bookmarks"
+    private var refreshTask: Task<Void, Never>?
 
     private struct StoredProject: Codable {
         var bookmark: Data
@@ -18,9 +21,14 @@ final class ProjectStore {
         var windowId: String?
     }
 
-    init(defaults: UserDefaults = .standard, service: TerminalService = ITermBridge()) {
+    init(
+        defaults: UserDefaults = .standard,
+        service: TerminalService = ITermBridge(),
+        gitProvider: GitInfoProviding = GitInfoService()
+    ) {
         self.defaults = defaults
         self.service = service
+        self.gitProvider = gitProvider
         load()
     }
 
@@ -110,6 +118,38 @@ final class ProjectStore {
             save()
         } catch {
             lastError = (error as? TerminalError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    func refreshAllGitInfo() async {
+        let snapshot = projects
+        let provider = gitProvider
+        let results: [(UUID, GitInfo?)] = await withTaskGroup(of: (UUID, GitInfo?).self) { group in
+            for project in snapshot {
+                let id = project.id
+                let url = project.url
+                group.addTask { (id, await provider.info(for: url)) }
+            }
+            var collected: [(UUID, GitInfo?)] = []
+            for await result in group {
+                collected.append(result)
+            }
+            return collected
+        }
+        // Subscript assignment: a non-nil result sets the entry; a nil result
+        // removes it (clearing status for a project that is no longer a repo).
+        for (id, info) in results {
+            gitInfo[id] = info
+        }
+    }
+
+    func startPeriodicRefresh() {
+        guard refreshTask == nil else { return }
+        refreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refreshAllGitInfo()
+                try? await Task.sleep(nanoseconds: 5 * 60 * 1_000_000_000)
+            }
         }
     }
 
