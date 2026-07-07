@@ -54,4 +54,30 @@ final class FakeGitInfoProvider: GitInfoProviding, @unchecked Sendable {
         await store.refreshAllGitInfo()
         #expect(store.gitInfo[id] == nil)
     }
+
+    @Test func removingProjectClearsGitInfo() async {
+        let provider = FakeGitInfoProvider()
+        let store = ProjectStore(defaults: makeDefaults(), service: FakeTerminalService(), gitProvider: provider)
+        let folder = makeTempFolder(named: "proj")
+        store.addProject(url: folder)
+        let project = store.projects[0]
+        provider.results[folder.standardizedFileURL.path] = gitInfo(behind: 1, ahead: 1, pr: nil)
+        await store.refreshAllGitInfo()
+        #expect(store.gitInfo[project.id] != nil)
+
+        store.remove(project)
+        #expect(store.gitInfo[project.id] == nil)
+    }
+
+    @Test func refreshHandlesMoreProjectsThanConcurrencyLimit() async {
+        let provider = FakeGitInfoProvider()
+        let store = ProjectStore(defaults: makeDefaults(), service: FakeTerminalService(), gitProvider: provider)
+        for i in 0..<7 {
+            let folder = makeTempFolder(named: "p\(i)")
+            store.addProject(url: folder)
+            provider.results[folder.standardizedFileURL.path] = gitInfo(behind: i, ahead: 0, pr: nil)
+        }
+        await store.refreshAllGitInfo()
+        #expect(store.gitInfo.count == 7)
+    }
 }

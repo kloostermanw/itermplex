@@ -46,6 +46,7 @@ final class ProjectStore {
 
     func remove(_ project: Project) {
         projects.removeAll { $0.id == project.id }
+        gitInfo[project.id] = nil
         save()
     }
 
@@ -124,20 +125,29 @@ final class ProjectStore {
     func refreshAllGitInfo() async {
         let snapshot = projects
         let provider = gitProvider
+        let maxConcurrent = 4
         let results: [(UUID, GitInfo?)] = await withTaskGroup(of: (UUID, GitInfo?).self) { group in
-            for project in snapshot {
+            var index = 0
+            while index < snapshot.count && index < maxConcurrent {
+                let project = snapshot[index]
                 let id = project.id
                 let url = project.url
                 group.addTask { (id, await provider.info(for: url)) }
+                index += 1
             }
             var collected: [(UUID, GitInfo?)] = []
             for await result in group {
                 collected.append(result)
+                if index < snapshot.count {
+                    let project = snapshot[index]
+                    let id = project.id
+                    let url = project.url
+                    group.addTask { (id, await provider.info(for: url)) }
+                    index += 1
+                }
             }
             return collected
         }
-        // Subscript assignment: a non-nil result sets the entry; a nil result
-        // removes it (clearing status for a project that is no longer a repo).
         for (id, info) in results {
             gitInfo[id] = info
         }
