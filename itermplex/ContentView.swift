@@ -11,11 +11,20 @@ struct ContentView: View {
         List {
             ForEach(store.projects) { project in
                 VStack(alignment: .leading, spacing: 2) {
-                    ProjectRowView(project: project)
+                    let info = store.gitInfo[project.id]
+                    ProjectRowView(project: project, gitInfo: info)
                         .contextMenu {
                             Button("Terminal") { openTerminal(for: project) }
                             Button("Remove") { store.remove(project) }
                         }
+                    if let info, info.issueNumber != nil || info.prNumber != nil {
+                        IssuePRLineView(
+                            issueNumber: info.issueNumber,
+                            issueURL: info.issueURL,
+                            prNumber: info.prNumber,
+                            prURL: info.prURL
+                        )
+                    }
                     ForEach(project.terminals) { ref in
                         TerminalRowView(label: ref.label)
                             .onTapGesture { activate(ref, in: project) }
@@ -39,6 +48,15 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                Button {
+                    Task { await store.refreshAllGitInfo() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .help("Refresh git status")
+                .accessibilityLabel("Refresh git status")
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Button(action: addProject) {
                     Image(systemName: "folder.badge.plus")
                 }
@@ -47,6 +65,7 @@ struct ContentView: View {
             }
         }
         .navigationTitle("")
+        .task { store.startPeriodicRefresh() }
         .alert("Rename terminal", isPresented: renameIsPresented) {
             TextField("Name", text: $renameText)
             Button("Cancel", role: .cancel) { renameTarget = nil }
