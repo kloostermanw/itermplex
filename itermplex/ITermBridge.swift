@@ -26,11 +26,16 @@ struct ITermBridge: TerminalService {
         return TerminalHandle(sessionId: sessionId, windowId: windowId)
     }
 
-    func focus(sessionId: String) async throws -> Bool {
+    func focus(sessionId: String) async throws -> FocusResult {
         let json = try runBridge(["focus", sessionId])
         let found = (json["found"] as? Bool) ?? false
+        let jobName = json["job_name"] as? String
         if found { await activateITerm() }
-        return found
+        return FocusResult(found: found, jobName: jobName)
+    }
+
+    func send(sessionId: String, text: String) async throws {
+        _ = try runBridge(["send", sessionId, "--text", text])
     }
 
     func close(sessionId: String) async throws {

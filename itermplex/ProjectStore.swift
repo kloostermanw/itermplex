@@ -135,13 +135,23 @@ final class ProjectStore {
         guard let prePIndex = projects.firstIndex(where: { $0.id == project.id }),
               let preTIndex = projects[prePIndex].terminals.firstIndex(where: { $0.id == ref.id }) else { return }
         let sessionId = projects[prePIndex].terminals[preTIndex].sessionId
+        let kind = projects[prePIndex].terminals[preTIndex].kind
         let folder = projects[prePIndex].url
         let existingWindowId = projects[prePIndex].windowId
         attention.remove(ref.id)
         do {
-            let found = try await service.focus(sessionId: sessionId)
-            if !found {
-                let handle = try await service.open(folder: folder, existingWindowId: existingWindowId, command: nil)
+            let result = try await service.focus(sessionId: sessionId)
+            if result.found {
+                // Live session: if it's a Claude row but claude is no longer
+                // the foreground job (shell prompt / None jobName), re-run it.
+                if kind == .claude, !claudeIsRunning(jobName: result.jobName) {
+                    try await service.send(sessionId: sessionId, text: "claude\n")
+                }
+            } else {
+                let command: String? = kind == .claude ? "claude" : nil
+                let handle = try await service.open(
+                    folder: folder, existingWindowId: existingWindowId, command: command
+                )
                 guard let pIndex = projects.firstIndex(where: { $0.id == project.id }),
                       let tIndex = projects[pIndex].terminals.firstIndex(where: { $0.id == ref.id }) else { return }
                 projects[pIndex].windowId = handle.windowId

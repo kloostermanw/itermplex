@@ -41,6 +41,7 @@ struct FocusResult: Equatable, Sendable {
 
 protocol TerminalService: Sendable {
     func open(folder: URL, existingWindowId: String?, command: String?) async throws -> TerminalHandle
-    func focus(sessionId: String) async throws -> Bool
+    func focus(sessionId: String) async throws -> FocusResult
+    func send(sessionId: String, text: String) async throws
     func close(sessionId: String) async throws
 }

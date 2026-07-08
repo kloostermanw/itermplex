@@ -3,7 +3,8 @@
 
 Subcommands (each prints one line of JSON to stdout on success):
   open FOLDER [--window WINDOW_ID] [--command CMD]  -> {"session_id": ..., "window_id": ...}
-  focus SESSION_ID                  -> {"found": true|false}
+  focus SESSION_ID                  -> {"found": ..., "job_name": ...}
+  send SESSION_ID --text TEXT       -> {"sent": true|false}
   close SESSION_ID                  -> {"closed": true|false}
 """
 import sys
@@ -32,9 +33,19 @@ async def _focus(connection, session_id):
     app = await iterm2.async_get_app(connection)
     session = app.get_session_by_id(session_id)
     if session is None:
-        return {"found": False}
+        return {"found": False, "job_name": None}
+    job_name = await session.async_get_variable("jobName")
     await session.async_activate(True, True)
-    return {"found": True}
+    return {"found": True, "job_name": job_name}
+
+
+async def _send(connection, session_id, text):
+    app = await iterm2.async_get_app(connection)
+    session = app.get_session_by_id(session_id)
+    if session is None:
+        return {"sent": False}
+    await session.async_send_text(text)
+    return {"sent": True}
 
 
 async def _close(connection, session_id):
@@ -55,6 +66,9 @@ def main():
     p_open.add_argument("--command", dest="command", default=None)
     p_focus = sub.add_parser("focus")
     p_focus.add_argument("session_id")
+    p_send = sub.add_parser("send")
+    p_send.add_argument("session_id")
+    p_send.add_argument("--text", dest="text", required=True)
     p_close = sub.add_parser("close")
     p_close.add_argument("session_id")
     args = parser.parse_args()
@@ -66,6 +80,8 @@ def main():
             holder["value"] = await _open(connection, args.folder, args.window, args.command)
         elif args.subcommand == "focus":
             holder["value"] = await _focus(connection, args.session_id)
+        elif args.subcommand == "send":
+            holder["value"] = await _send(connection, args.session_id, args.text)
         elif args.subcommand == "close":
             holder["value"] = await _close(connection, args.session_id)
 

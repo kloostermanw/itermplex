@@ -20,8 +20,8 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
     var focusCalls: [String] = []
     var closeCalls: [String] = []
     var handles: [TerminalHandle] = []
-    var focusReturns = true
     var focusResult = FocusResult(found: true, jobName: nil)
+    var sendCalls: [(sessionId: String, text: String)] = []
     var errorToThrow: TerminalError?
     private var openIndex = 0
 
@@ -35,10 +35,15 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
         return handle
     }
 
-    func focus(sessionId: String) async throws -> Bool {
+    func focus(sessionId: String) async throws -> FocusResult {
         if let error = errorToThrow { throw error }
         focusCalls.append(sessionId)
-        return focusReturns
+        return focusResult
+    }
+
+    func send(sessionId: String, text: String) async throws {
+        if let error = errorToThrow { throw error }
+        sendCalls.append((sessionId, text))
     }
 
     func close(sessionId: String) async throws {
@@ -184,7 +189,7 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
         store.addProject(url: makeTempFolder(named: "proj"))
         await store.openTerminal(for: store.projects[0])
 
-        fake.focusReturns = true
+        fake.focusResult = FocusResult(found: true, jobName: nil)
         await store.activate(store.projects[0].terminals[0], in: store.projects[0])
         #expect(fake.focusCalls == ["sess-A"])
         #expect(fake.openCalls.count == 1) // no reopen
@@ -200,13 +205,86 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
         store.addProject(url: makeTempFolder(named: "proj"))
         await store.openTerminal(for: store.projects[0])
 
-        fake.focusReturns = false
+        fake.focusResult = FocusResult(found: false, jobName: nil)
         await store.activate(store.projects[0].terminals[0], in: store.projects[0])
         #expect(fake.focusCalls == ["sess-A"])
         #expect(fake.openCalls.count == 2)
         #expect(store.projects[0].terminals[0].sessionId == "sess-B")
         #expect(store.projects[0].windowId == "win-2")
         #expect(store.projects[0].terminals[0].label == "Terminal 1") // label unchanged
+    }
+
+    @Test func activateClaudeInShellRestartsClaude() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openClaude(for: store.projects[0])
+
+        fake.focusResult = FocusResult(found: true, jobName: "zsh")
+        await store.activate(store.projects[0].terminals[0], in: store.projects[0])
+        #expect(fake.sendCalls.count == 1)
+        #expect(fake.sendCalls[0] == ("sess-A", "claude\n"))
+        #expect(fake.openCalls.count == 1) // no reopen; session was alive
+    }
+
+    @Test func activateClaudeWhileRunningDoesNotRestart() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openClaude(for: store.projects[0])
+
+        fake.focusResult = FocusResult(found: true, jobName: "2.1.203") // claude version
+        await store.activate(store.projects[0].terminals[0], in: store.projects[0])
+        #expect(fake.sendCalls.isEmpty)
+    }
+
+    @Test func activateClaudeWithNilJobRestarts() async {
+        // Bare shell reports jobName == nil (no shell integration); treat as exited.
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openClaude(for: store.projects[0])
+
+        fake.focusResult = FocusResult(found: true, jobName: nil)
+        await store.activate(store.projects[0].terminals[0], in: store.projects[0])
+        #expect(fake.sendCalls.count == 1)
+        #expect(fake.sendCalls[0] == ("sess-A", "claude\n"))
+    }
+
+    @Test func activateDeadClaudeReopensRunningClaude() async {
+        let fake = FakeTerminalService()
+        fake.handles = [
+            TerminalHandle(sessionId: "sess-A", windowId: "win-1"),
+            TerminalHandle(sessionId: "sess-B", windowId: "win-1"),
+        ]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openClaude(for: store.projects[0])
+
+        fake.focusResult = FocusResult(found: false, jobName: nil)
+        await store.activate(store.projects[0].terminals[0], in: store.projects[0])
+        #expect(fake.openCalls.count == 2)
+        #expect(fake.openCalls[1].command == "claude")
+        #expect(store.projects[0].terminals[0].sessionId == "sess-B")
+    }
+
+    @Test func activateDeadTerminalReopensPlainShell() async {
+        let fake = FakeTerminalService()
+        fake.handles = [
+            TerminalHandle(sessionId: "sess-A", windowId: "win-1"),
+            TerminalHandle(sessionId: "sess-B", windowId: "win-1"),
+        ]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openTerminal(for: store.projects[0])
+
+        fake.focusResult = FocusResult(found: false, jobName: nil)
+        await store.activate(store.projects[0].terminals[0], in: store.projects[0])
+        #expect(fake.openCalls.count == 2)
+        #expect(fake.openCalls[1].command == nil)
     }
 
     @Test func renameChangesLabelAndPersists() async {
