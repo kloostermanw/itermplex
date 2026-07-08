@@ -3,6 +3,7 @@ import AppKit
 
 struct ContentView: View {
     @State private var store = ProjectStore()
+    @State private var monitor: SessionMonitoring = ITermMonitor()
     @State private var isBusy = false
     @State private var renameTarget: (project: Project, ref: TerminalRef)?
     @State private var renameText = ""
@@ -27,13 +28,20 @@ struct ContentView: View {
                         )
                     }
                     ForEach(project.terminals) { ref in
-                        TerminalRowView(label: ref.label, kind: ref.kind)
-                            .onTapGesture { activate(ref, in: project) }
-                            .contextMenu {
+                        TerminalRowView(
+                            label: ref.label,
+                            kind: ref.kind,
+                            isExited: ref.kind == .claude && store.runState(for: ref) == .exited,
+                            needsAttention: store.attention.contains(ref.id)
+                        )
+                        .onTapGesture { activate(ref, in: project) }
+                        .contextMenu {
+                            if ref.kind == .terminal {
                                 Button("Rename") { startRename(ref, in: project) }
-                                Button("Remove") { store.removeTerminal(ref, in: project) }
-                                Button("Close terminal") { closeTerminal(ref, in: project) }
                             }
+                            Button("Remove") { store.removeTerminal(ref, in: project) }
+                            Button("Close terminal") { closeTerminal(ref, in: project) }
+                        }
                     }
                 }
             }
@@ -66,7 +74,10 @@ struct ContentView: View {
             }
         }
         .navigationTitle("")
-        .task { store.startPeriodicRefresh() }
+        .task {
+            store.startPeriodicRefresh()
+            monitor.start { event in store.handle(event) }
+        }
         .alert("Rename terminal", isPresented: renameIsPresented) {
             TextField("Name", text: $renameText)
             Button("Cancel", role: .cancel) { renameTarget = nil }

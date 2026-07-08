@@ -3,14 +3,26 @@ import SwiftUI
 struct TerminalRowView: View {
     let label: String
     let kind: TerminalKind
+    var isExited: Bool = false
+    var needsAttention: Bool = false
+
+    private var iconName: String {
+        kind == .claude ? "sparkles" : "terminal"
+    }
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: kind == .claude ? "sparkles" : "terminal")
-                .foregroundStyle(.secondary)
+            Image(systemName: iconName)
+                .foregroundStyle(isExited ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
+                .opacity(isExited ? 0.6 : 1)
             Text(label)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .foregroundStyle(isExited ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+            if needsAttention {
+                Spacer(minLength: 4)
+                Text("🔔")
+            }
         }
         .padding(.leading, 16)
         .padding(.vertical, 1)
