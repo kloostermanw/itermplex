@@ -107,10 +107,18 @@ final class ITermMonitor: SessionMonitoring, @unchecked Sendable {
             process.terminate()
             return
         }
+        let staleHandle = self.readHandle
         self.process = process
         self.readHandle = readHandle
         self.buffer = Data()
         lock.unlock()
+
+        // If the previous process died before its terminationHandler could
+        // run its own teardown (e.g. it exited immediately after run()), its
+        // readabilityHandler was never cleared and its GCD dispatch source
+        // (and the fd it holds) would otherwise leak. Clear it here so every
+        // publish of a new handle also retires the old one.
+        staleHandle?.readabilityHandler = nil
     }
 
     private func consume(_ data: Data) {
