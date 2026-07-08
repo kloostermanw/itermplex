@@ -1,12 +1,30 @@
 import Foundation
 import Observation
 
+enum ClaudeRunState: Equatable {
+    case running
+    case exited
+}
+
 @MainActor
 @Observable
 final class ProjectStore {
     private(set) var projects: [Project] = []
     var lastError: String?
     private(set) var gitInfo: [UUID: GitInfo] = [:]
+    private(set) var attention: Set<UUID> = []
+    private(set) var jobNames: [UUID: String] = [:]
+
+    /// Foreground job names that mean "no agent running, just a shell".
+    /// Confirmed/extended by the design spike (Task 0).
+    static let shellJobNames: Set<String> = [
+        "zsh", "-zsh", "bash", "-bash", "fish", "-fish",
+        "sh", "-sh", "tcsh", "-tcsh", "login", "dash", "-dash"
+    ]
+
+    func isShell(_ jobName: String) -> Bool {
+        Self.shellJobNames.contains(jobName)
+    }
 
     private let defaults: UserDefaults
     private let service: TerminalService
@@ -119,6 +137,7 @@ final class ProjectStore {
         let sessionId = projects[prePIndex].terminals[preTIndex].sessionId
         let folder = projects[prePIndex].url
         let existingWindowId = projects[prePIndex].windowId
+        attention.remove(ref.id)
         do {
             let found = try await service.focus(sessionId: sessionId)
             if !found {
@@ -132,6 +151,54 @@ final class ProjectStore {
         } catch {
             lastError = (error as? TerminalError)?.errorDescription ?? error.localizedDescription
         }
+    }
+
+    func handle(_ event: MonitorEvent) {
+        switch event {
+        case .title(let sessionId, let name):
+            guard let (p, t) = indexOfSession(sessionId) else { return }
+            if projects[p].terminals[t].kind == .claude, !name.isEmpty {
+                projects[p].terminals[t].label = name
+                save()
+            }
+        case .bell(let sessionId):
+            guard let (p, t) = indexOfSession(sessionId) else { return }
+            attention.insert(projects[p].terminals[t].id)
+        case .job(let sessionId, let jobName):
+            guard let (p, t) = indexOfSession(sessionId) else { return }
+            jobNames[projects[p].terminals[t].id] = jobName
+        case .terminated(let sessionId):
+            guard let (p, t) = indexOfSession(sessionId) else { return }
+            jobNames[projects[p].terminals[t].id] = ""
+        }
+    }
+
+    /// Claude counts as running when the foreground job is a non-empty,
+    /// non-shell name (the spike showed claude reports its version string,
+    /// while a bare shell reports None/"" or a shell name).
+    func claudeIsRunning(jobName: String?) -> Bool {
+        guard let job = jobName, !job.isEmpty else { return false }
+        return !isShell(job)
+    }
+
+    func runState(for ref: TerminalRef) -> ClaudeRunState {
+        // No job info yet (monitor inactive or event not arrived): stay
+        // optimistic so rows don't all read "exited" when monitoring is off.
+        guard let job = jobNames[ref.id] else { return .running }
+        return claudeIsRunning(jobName: job) ? .running : .exited
+    }
+
+    func clearAttention(_ ref: TerminalRef) {
+        attention.remove(ref.id)
+    }
+
+    private func indexOfSession(_ sessionId: String) -> (Int, Int)? {
+        for (p, project) in projects.enumerated() {
+            if let t = project.terminals.firstIndex(where: { $0.sessionId == sessionId }) {
+                return (p, t)
+            }
+        }
+        return nil
     }
 
     func rename(_ ref: TerminalRef, in project: Project, to label: String) {

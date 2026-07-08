@@ -21,6 +21,7 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
     var closeCalls: [String] = []
     var handles: [TerminalHandle] = []
     var focusReturns = true
+    var focusResult = FocusResult(found: true, jobName: nil)
     var errorToThrow: TerminalError?
     private var openIndex = 0
 
@@ -292,5 +293,84 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
         #expect(store.projects[0].terminals[0].kind == .terminal)
         #expect(store.projects[0].terminalSeq == 1)
         #expect(store.projects[0].claudeSeq == 0)
+    }
+
+    @Test func titleEventUpdatesClaudeLabel() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openClaude(for: store.projects[0])
+
+        store.handle(.title(sessionId: "sess-A", name: "refactor parser"))
+        #expect(store.projects[0].terminals[0].label == "refactor parser")
+    }
+
+    @Test func titleEventIgnoredForTerminalKind() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openTerminal(for: store.projects[0])
+
+        store.handle(.title(sessionId: "sess-A", name: "should not apply"))
+        #expect(store.projects[0].terminals[0].label == "Terminal 1")
+    }
+
+    @Test func titleEventForUnknownSessionIgnored() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openClaude(for: store.projects[0])
+
+        store.handle(.title(sessionId: "nope", name: "x"))
+        #expect(store.projects[0].terminals[0].label == "Claude 1")
+    }
+
+    @Test func bellEventAddsAttentionAndActivateClears() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        fake.focusResult = FocusResult(found: true, jobName: "node")
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openClaude(for: store.projects[0])
+        let ref = store.projects[0].terminals[0]
+
+        store.handle(.bell(sessionId: "sess-A"))
+        #expect(store.attention.contains(ref.id))
+
+        await store.activate(ref, in: store.projects[0])
+        #expect(!store.attention.contains(ref.id))
+    }
+
+    @Test func jobEventDrivesRunState() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openClaude(for: store.projects[0])
+        let ref = store.projects[0].terminals[0]
+
+        #expect(store.runState(for: ref) == .running) // no info yet -> optimistic
+        store.handle(.job(sessionId: "sess-A", jobName: "2.1.203")) // claude version string
+        #expect(store.runState(for: ref) == .running)
+        store.handle(.job(sessionId: "sess-A", jobName: "zsh"))
+        #expect(store.runState(for: ref) == .exited)
+        store.handle(.job(sessionId: "sess-A", jobName: "")) // bare shell, no shell integration
+        #expect(store.runState(for: ref) == .exited)
+    }
+
+    @Test func terminatedEventMarksExitedAndKeepsRef() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openClaude(for: store.projects[0])
+        let ref = store.projects[0].terminals[0]
+
+        store.handle(.terminated(sessionId: "sess-A"))
+        #expect(store.runState(for: ref) == .exited)
+        #expect(store.projects[0].terminals.count == 1)
     }
 }

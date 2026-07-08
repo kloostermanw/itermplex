@@ -34,6 +34,11 @@ enum TerminalError: LocalizedError, Equatable {
     }
 }
 
+struct FocusResult: Equatable, Sendable {
+    let found: Bool
+    let jobName: String?
+}
+
 protocol TerminalService: Sendable {
     func open(folder: URL, existingWindowId: String?, command: String?) async throws -> TerminalHandle
     func focus(sessionId: String) async throws -> Bool
