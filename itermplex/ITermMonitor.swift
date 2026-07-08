@@ -15,6 +15,7 @@ final class ITermMonitor: SessionMonitoring, @unchecked Sendable {
 
     private let lock = NSLock()
     private var process: Process?
+    private var readHandle: FileHandle?
     private var onEvent: (@MainActor (MonitorEvent) -> Void)?
     private var stopped = false
     private var buffer = Data()
@@ -31,16 +32,36 @@ final class ITermMonitor: SessionMonitoring, @unchecked Sendable {
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: nil
         ) { [weak self] _ in self?.stop() }
-        launch()
+        // ensureInterpreter() can shell out to `python -m venv` / `pip install` on first
+        // use, which is slow; keep that off the caller's (often main) thread.
+        DispatchQueue.global().async { [weak self] in self?.launch() }
     }
 
     func stop() {
         lock.lock()
         stopped = true
-        let running = process
-        process = nil
         lock.unlock()
-        running?.terminate()
+        teardown(terminate: true)
+    }
+
+    /// Clears the readability handler and drops the process/handle references
+    /// under the lock, then (optionally) terminates the process outside the
+    /// lock to avoid reentrancy. Foundation only tears down the GCD dispatch
+    /// source backing `readabilityHandler` when it is explicitly set to nil,
+    /// so this must run on every teardown path (explicit stop, or the
+    /// process's own termination) to avoid leaking a file descriptor.
+    private func teardown(terminate: Bool) {
+        lock.lock()
+        let running = process
+        let handle = readHandle
+        process = nil
+        readHandle = nil
+        lock.unlock()
+
+        handle?.readabilityHandler = nil
+        if terminate {
+            running?.terminate()
+        }
     }
 
     private func launch() {
@@ -65,6 +86,7 @@ final class ITermMonitor: SessionMonitoring, @unchecked Sendable {
             self?.consume(handle.availableData)
         }
         process.terminationHandler = { [weak self] _ in
+            self?.teardown(terminate: false)
             self?.scheduleRelaunch()
         }
 
@@ -73,8 +95,20 @@ final class ITermMonitor: SessionMonitoring, @unchecked Sendable {
         } catch {
             return  // silently inactive
         }
+
+        let readHandle = outPipe.fileHandleForReading
         lock.lock()
+        if stopped {
+            // stop() ran while process.run() was in flight; the process was
+            // never published, so stop() couldn't terminate it. Do that now
+            // rather than leaving an orphaned daemon behind.
+            lock.unlock()
+            readHandle.readabilityHandler = nil
+            process.terminate()
+            return
+        }
         self.process = process
+        self.readHandle = readHandle
         self.buffer = Data()
         lock.unlock()
     }
@@ -95,9 +129,15 @@ final class ITermMonitor: SessionMonitoring, @unchecked Sendable {
         lock.unlock()
 
         guard let handler else { return }
-        for line in lines {
-            guard let event = MonitorEvent.decode(line: line) else { continue }
-            Task { @MainActor in handler(event) }
+        let events = lines.compactMap { MonitorEvent.decode(line: $0) }
+        guard !events.isEmpty else { return }
+        // Deliver as one batch so events decoded from the same read (e.g.
+        // title then terminated for one session) stay in order; separate
+        // Tasks give no such guarantee.
+        Task { @MainActor in
+            for event in events {
+                handler(event)
+            }
         }
     }
 
