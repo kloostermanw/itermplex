@@ -439,6 +439,38 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
         #expect(store.runState(for: ref) == .exited)
     }
 
+    @Test func titleEventWithUnchangedNameSkipsUpdateButLaterChangeApplies() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openClaude(for: store.projects[0])
+
+        store.handle(.title(sessionId: "sess-A", name: "Claude 1"))
+        #expect(store.projects[0].terminals[0].label == "Claude 1")
+
+        store.handle(.title(sessionId: "sess-A", name: "refactor parser"))
+        #expect(store.projects[0].terminals[0].label == "refactor parser")
+    }
+
+    @Test func removeTerminalPurgesAttentionAndJobNames() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+        await store.openClaude(for: store.projects[0])
+
+        store.handle(.bell(sessionId: "sess-A"))
+        store.handle(.job(sessionId: "sess-A", jobName: "zsh"))
+        let ref = store.projects[0].terminals[0]
+        #expect(store.attention.contains(ref.id))
+        #expect(store.runState(for: ref) == .exited)
+
+        store.removeTerminal(ref, in: store.projects[0])
+        #expect(!store.attention.contains(ref.id))
+        #expect(store.runState(for: ref) == .running) // jobNames entry purged -> optimistic default
+    }
+
     @Test func terminatedEventMarksExitedAndKeepsRef() async {
         let fake = FakeTerminalService()
         fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]

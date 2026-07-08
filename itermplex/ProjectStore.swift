@@ -85,8 +85,13 @@ final class ProjectStore {
     }
 
     func remove(_ project: Project) {
+        let terminalIds = project.terminals.map(\.id)
         projects.removeAll { $0.id == project.id }
         gitInfo[project.id] = nil
+        for id in terminalIds {
+            attention.remove(id)
+            jobNames[id] = nil
+        }
         save()
     }
 
@@ -167,7 +172,8 @@ final class ProjectStore {
         switch event {
         case .title(let sessionId, let name):
             guard let (p, t) = indexOfSession(sessionId) else { return }
-            if projects[p].terminals[t].kind == .claude, !name.isEmpty {
+            if projects[p].terminals[t].kind == .claude, !name.isEmpty,
+               projects[p].terminals[t].label != name {
                 projects[p].terminals[t].label = name
                 save()
             }
@@ -221,6 +227,8 @@ final class ProjectStore {
     func removeTerminal(_ ref: TerminalRef, in project: Project) {
         guard let pIndex = projects.firstIndex(where: { $0.id == project.id }) else { return }
         projects[pIndex].terminals.removeAll { $0.id == ref.id }
+        attention.remove(ref.id)
+        jobNames[ref.id] = nil
         save()
     }
 
