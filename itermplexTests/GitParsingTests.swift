@@ -72,4 +72,11 @@ import Foundation
         #expect(GitParsing.checksSummary(fromBucketJSON: "not json") == nil)
         #expect(GitParsing.checksSummary(fromBucketJSON: "[]") == nil)
     }
+
+    @Test func checksSummaryTextListsNonzeroCategories() {
+        let failing = ChecksSummary(passing: 291, failing: 11, cancelled: 3, skipped: 3, pending: 0)
+        #expect(failing.summaryText == "11 failing, 3 cancelled, 3 skipped, 291 successfull checks")
+        let clean = ChecksSummary(passing: 291, failing: 0, cancelled: 0, skipped: 3, pending: 0)
+        #expect(clean.summaryText == "3 skipped, 291 successfull checks")
+    }
 }
