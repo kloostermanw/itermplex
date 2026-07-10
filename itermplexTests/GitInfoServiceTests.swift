@@ -58,4 +58,30 @@ struct FakeCommandRunner: CommandRunning {
         #expect(info?.issueNumber == nil)   // "develop" has no trailing digits
         #expect(info?.prNumber == nil)      // gh returned empty
     }
+
+    @Test func assemblesBaseAheadBehindAndChecks() async {
+        let svc = service { _, args in
+            if args.contains("--is-inside-work-tree") { return CommandResult(stdout: "true\n", stderr: "", status: 0) }
+            if args.contains("--abbrev-ref") { return CommandResult(stdout: "feature/issue-333\n", stderr: "", status: 0) }
+            if args.contains("symbolic-ref") { return CommandResult(stdout: "origin/develop\n", stderr: "", status: 0) }
+            if args.contains(where: { $0.contains("@{upstream}") }) { return CommandResult(stdout: "1\t2\n", stderr: "", status: 0) }
+            if args.contains(where: { $0.contains("origin/develop...HEAD") }) { return CommandResult(stdout: "4\t7\n", stderr: "", status: 0) }
+            if args.contains("remote") { return CommandResult(stdout: "https://github.com/o/r.git\n", stderr: "", status: 0) }
+            if args.contains("checks") {
+                return CommandResult(stdout: "[{\"bucket\":\"pass\"},{\"bucket\":\"fail\"},{\"bucket\":\"skipping\"}]", stderr: "", status: 1)
+            }
+            if args.contains("pr") { return CommandResult(stdout: "334\n", stderr: "", status: 0) }
+            return CommandResult(stdout: "", stderr: "", status: 0)
+        }
+        let info = await svc.info(for: URL(fileURLWithPath: "/tmp/x"))
+        #expect(info?.hasBase == true)
+        #expect(info?.baseBehind == 4)
+        #expect(info?.baseAhead == 7)
+        #expect(info?.behind == 1)
+        #expect(info?.ahead == 2)
+        #expect(info?.checks?.passing == 1)
+        #expect(info?.checks?.failing == 1)
+        #expect(info?.checks?.skipped == 1)
+        #expect(info?.checks?.hasFailures == true)
+    }
 }

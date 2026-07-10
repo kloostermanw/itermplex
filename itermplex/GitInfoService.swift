@@ -41,11 +41,36 @@ struct GitInfoService: GitInfoProviding {
             hasUpstream = true
         }
 
+        var baseBehind = 0
+        var baseAhead = 0
+        var hasBase = false
+        let symbolicRef = git(folder, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+        if symbolicRef.status == 0,
+           let base = GitParsing.defaultBranch(fromSymbolicRef: symbolicRef.stdout) {
+            let baseRevList = git(folder, ["rev-list", "--left-right", "--count", "origin/\(base)...HEAD"])
+            if baseRevList.status == 0,
+               let parsed = GitParsing.aheadBehind(fromRevListOutput: baseRevList.stdout) {
+                baseBehind = parsed.behind
+                baseAhead = parsed.ahead
+                hasBase = true
+            }
+        }
+
         let remote = git(folder, ["remote", "get-url", "origin"])
         let ownerRepo = remote.status == 0 ? GitParsing.ownerRepo(fromRemoteURL: remote.stdout) : nil
 
         let issueNumber = GitParsing.issueNumber(fromBranch: branch)
         let prNumber = pullRequestNumber(folder: folder, branch: branch)
+
+        var checks: ChecksSummary?
+        if let prNumber, let ghPath {
+            let result = runner.run(
+                ghPath,
+                ["pr", "checks", "\(prNumber)", "--json", "bucket"],
+                workingDirectory: folder
+            )
+            checks = GitParsing.checksSummary(fromBucketJSON: result.stdout)
+        }
 
         var issueURL: URL?
         var prURL: URL?
@@ -60,7 +85,9 @@ struct GitInfoService: GitInfoProviding {
 
         return GitInfo(
             branch: branch, behind: behind, ahead: ahead, hasUpstream: hasUpstream,
-            issueNumber: issueNumber, prNumber: prNumber, issueURL: issueURL, prURL: prURL
+            baseAhead: baseAhead, baseBehind: baseBehind, hasBase: hasBase,
+            issueNumber: issueNumber, prNumber: prNumber, issueURL: issueURL, prURL: prURL,
+            checks: checks
         )
     }
 
