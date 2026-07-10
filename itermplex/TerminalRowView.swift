@@ -7,7 +7,7 @@ struct TerminalRowView: View {
     var needsAttention: Bool = false
 
     private var iconName: String {
-        kind == .claude ? "sparkles" : "terminal"
+        kind == .claude ? "sparkle" : "terminal"
     }
 
     var body: some View {
@@ -24,7 +24,6 @@ struct TerminalRowView: View {
                 Text("🔔")
             }
         }
-        .padding(.leading, 16)
         .padding(.vertical, 1)
         .contentShape(Rectangle())
     }
