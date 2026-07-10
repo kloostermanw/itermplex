@@ -36,8 +36,18 @@ struct ContentView: View {
                         store.move(id: dragged, before: project.id)
                         return true
                     }
-                    Divider()
+                    if project.id != store.projects.last?.id {
+                        Divider()
+                    }
                 }
+                Color.clear
+                    .frame(maxWidth: .infinity, minHeight: 40)
+                    .contentShape(Rectangle())
+                    .dropDestination(for: String.self) { items, _ in
+                        guard let first = items.first, let dragged = UUID(uuidString: first) else { return false }
+                        store.moveToEnd(id: dragged)
+                        return true
+                    }
             }
         }
         .frame(minWidth: 240)

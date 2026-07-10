@@ -108,4 +108,31 @@ import Foundation
         store.move(id: UUID(), before: b)
         #expect(store.projects.map(\.name) == ["a", "b"])
     }
+
+    @Test func moveToEndMovesProjectToLast() {
+        let store = ProjectStore(defaults: makeDefaults())
+        store.addProject(url: makeTempFolder(named: "a"))
+        store.addProject(url: makeTempFolder(named: "b"))
+        store.addProject(url: makeTempFolder(named: "c"))
+        let a = store.projects[0].id
+        store.moveToEnd(id: a)
+        #expect(store.projects.map(\.name) == ["b", "c", "a"])
+    }
+
+    @Test func moveToEndOnLastIsNoOp() {
+        let store = ProjectStore(defaults: makeDefaults())
+        store.addProject(url: makeTempFolder(named: "a"))
+        store.addProject(url: makeTempFolder(named: "b"))
+        let b = store.projects[1].id
+        store.moveToEnd(id: b)
+        #expect(store.projects.map(\.name) == ["a", "b"])
+    }
+
+    @Test func moveToEndMissingIsNoOp() {
+        let store = ProjectStore(defaults: makeDefaults())
+        store.addProject(url: makeTempFolder(named: "a"))
+        store.addProject(url: makeTempFolder(named: "b"))
+        store.moveToEnd(id: UUID())
+        #expect(store.projects.map(\.name) == ["a", "b"])
+    }
 }

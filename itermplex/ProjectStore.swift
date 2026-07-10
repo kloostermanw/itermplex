@@ -110,6 +110,14 @@ final class ProjectStore {
         save()
     }
 
+    func moveToEnd(id: UUID) {
+        guard let from = projects.firstIndex(where: { $0.id == id }),
+              from != projects.count - 1 else { return }
+        let item = projects.remove(at: from)
+        projects.append(item)
+        save()
+    }
+
     func openTerminal(for project: Project) async {
         await openSession(for: project, command: nil, kind: .terminal)
     }
