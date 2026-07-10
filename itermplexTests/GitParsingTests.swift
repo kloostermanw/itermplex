@@ -39,4 +39,13 @@ import Foundation
         #expect(GitParsing.ownerRepo(fromRemoteURL: "https://gitlab.com/a/b.git") == nil)
         #expect(GitParsing.ownerRepo(fromRemoteURL: "not a url") == nil)
     }
+
+    @Test func checksSummaryTotalsAndFailures() {
+        let s = ChecksSummary(passing: 291, failing: 11, cancelled: 3, skipped: 3, pending: 0)
+        #expect(s.total == 308)
+        #expect(s.hasFailures == true)
+        let clean = ChecksSummary(passing: 291, failing: 0, cancelled: 0, skipped: 3, pending: 0)
+        #expect(clean.hasFailures == false)
+        #expect(clean.total == 294)
+    }
 }
