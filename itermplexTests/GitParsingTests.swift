@@ -48,4 +48,28 @@ import Foundation
         #expect(clean.hasFailures == false)
         #expect(clean.total == 294)
     }
+
+    @Test func defaultBranchStripsOriginPrefix() {
+        #expect(GitParsing.defaultBranch(fromSymbolicRef: "origin/develop\n") == "develop")
+        #expect(GitParsing.defaultBranch(fromSymbolicRef: "refs/remotes/origin/main") == "main")
+        #expect(GitParsing.defaultBranch(fromSymbolicRef: "") == nil)
+    }
+
+    @Test func checksSummaryTalliesBuckets() {
+        let json = """
+        [{"bucket":"pass"},{"bucket":"pass"},{"bucket":"fail"},{"bucket":"cancel"},{"bucket":"skipping"},{"bucket":"pending"}]
+        """
+        let s = GitParsing.checksSummary(fromBucketJSON: json)
+        #expect(s?.passing == 2)
+        #expect(s?.failing == 1)
+        #expect(s?.cancelled == 1)
+        #expect(s?.skipped == 1)
+        #expect(s?.pending == 1)
+    }
+
+    @Test func checksSummaryNilOnEmptyOrInvalid() {
+        #expect(GitParsing.checksSummary(fromBucketJSON: "") == nil)
+        #expect(GitParsing.checksSummary(fromBucketJSON: "not json") == nil)
+        #expect(GitParsing.checksSummary(fromBucketJSON: "[]") == nil)
+    }
 }
