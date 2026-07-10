@@ -9,68 +9,42 @@ struct ContentView: View {
     @State private var renameText = ""
 
     var body: some View {
-        List {
-            ForEach(store.projects) { project in
-                VStack(alignment: .leading, spacing: 2) {
-                    let info = store.gitInfo[project.id]
-                    ProjectRowView(project: project, gitInfo: info)
-                        .contextMenu {
-                            Button("Terminal") { openTerminal(for: project) }
-                            Button("Claude") { openClaude(for: project) }
-                            Button("Remove") { store.remove(project) }
-                        }
-                    if let info, info.issueNumber != nil || info.prNumber != nil {
-                        IssuePRLineView(
-                            issueNumber: info.issueNumber,
-                            issueURL: info.issueURL,
-                            prNumber: info.prNumber,
-                            prURL: info.prURL
-                        )
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                SidebarHeaderView(
+                    count: store.projects.count,
+                    onRefresh: { Task { await store.refreshAllGitInfo() } },
+                    onAdd: addProject
+                )
+                ForEach(store.projects) { project in
+                    WorkspaceCardView(
+                        project: project,
+                        gitInfo: store.gitInfo[project.id],
+                        runState: { store.runState(for: $0) },
+                        needsAttention: { store.attention.contains($0.id) },
+                        onActivate: { activate($0, in: project) },
+                        onRenameTerminal: { startRename($0, in: project) },
+                        onRemoveTerminal: { store.removeTerminal($0, in: project) },
+                        onCloseTerminal: { closeTerminal($0, in: project) },
+                        onOpenTerminal: { openTerminal(for: project) },
+                        onOpenClaude: { openClaude(for: project) },
+                        onRemoveProject: { store.remove(project) }
+                    )
+                    .draggable(project.id.uuidString)
+                    .dropDestination(for: String.self) { items, _ in
+                        guard let first = items.first, let dragged = UUID(uuidString: first) else { return false }
+                        store.move(id: dragged, before: project.id)
+                        return true
                     }
-                    ForEach(project.terminals) { ref in
-                        TerminalRowView(
-                            label: ref.label,
-                            kind: ref.kind,
-                            isExited: ref.kind == .claude && store.runState(for: ref) == .exited,
-                            needsAttention: store.attention.contains(ref.id)
-                        )
-                        .onTapGesture { activate(ref, in: project) }
-                        .contextMenu {
-                            if ref.kind == .terminal {
-                                Button("Rename") { startRename(ref, in: project) }
-                            }
-                            Button("Remove") { store.removeTerminal(ref, in: project) }
-                            Button("Close terminal") { closeTerminal(ref, in: project) }
-                        }
-                    }
+                    Divider()
                 }
             }
-            .onMove { store.move(fromOffsets: $0, toOffset: $1) }
         }
-        .listStyle(.sidebar)
         .frame(minWidth: 240)
         .disabled(isBusy)
         .overlay {
             if isBusy {
                 ProgressView().controlSize(.small)
-            }
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    Task { await store.refreshAllGitInfo() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .help("Refresh git status")
-                .accessibilityLabel("Refresh git status")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button(action: addProject) {
-                    Image(systemName: "folder.badge.plus")
-                }
-                .help("Add project folder")
-                .accessibilityLabel("Add project folder")
             }
         }
         .navigationTitle("")
