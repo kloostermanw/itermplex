@@ -100,6 +100,16 @@ final class ProjectStore {
         save()
     }
 
+    func move(id: UUID, before targetId: UUID) {
+        guard id != targetId,
+              let from = projects.firstIndex(where: { $0.id == id }),
+              projects.contains(where: { $0.id == targetId }) else { return }
+        let item = projects.remove(at: from)
+        guard let insertAt = projects.firstIndex(where: { $0.id == targetId }) else { return }
+        projects.insert(item, at: insertAt)
+        save()
+    }
+
     func openTerminal(for project: Project) async {
         await openSession(for: project, command: nil, kind: .terminal)
     }
