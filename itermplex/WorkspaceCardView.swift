@@ -46,11 +46,13 @@ struct WorkspaceCardView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 8)
-            if let gitInfo, gitInfo.hasBase {
-                AheadBehindView(behind: gitInfo.baseBehind, ahead: gitInfo.baseAhead)
-            }
-            if let gitInfo, gitInfo.hasUpstream {
-                AheadBehindView(behind: gitInfo.behind, ahead: gitInfo.ahead)
+            HStack(spacing: 16) {
+                if let gitInfo, gitInfo.hasBase {
+                    AheadBehindView(behind: gitInfo.baseBehind, ahead: gitInfo.baseAhead)
+                }
+                if let gitInfo, gitInfo.hasUpstream {
+                    AheadBehindView(behind: gitInfo.behind, ahead: gitInfo.ahead)
+                }
             }
         }
         .contextMenu {
