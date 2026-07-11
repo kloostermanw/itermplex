@@ -30,7 +30,18 @@ final class ProjectStore {
     private let service: TerminalService
     private let gitProvider: GitInfoProviding
     private let storageKey = "itermplex.projects.bookmarks"
+    private let badgeKey = "itermplex.showWorkspaceBadge"
     private var refreshTask: Task<Void, Never>?
+
+    /// When on, newly opened (or reopened) sessions get the workspace name as an
+    /// iTerm2 badge. Off by default. Persisted; changing it affects future
+    /// sessions only (existing sessions are not retroactively updated).
+    var showWorkspaceBadge: Bool {
+        didSet {
+            guard showWorkspaceBadge != oldValue else { return }
+            defaults.set(showWorkspaceBadge, forKey: badgeKey)
+        }
+    }
 
     private struct StoredProject: Codable {
         var bookmark: Data
@@ -69,6 +80,7 @@ final class ProjectStore {
         self.defaults = defaults
         self.service = service
         self.gitProvider = gitProvider
+        self.showWorkspaceBadge = defaults.bool(forKey: badgeKey)
         load()
     }
 
@@ -130,9 +142,10 @@ final class ProjectStore {
         guard let preIndex = projects.firstIndex(where: { $0.id == project.id }) else { return }
         let folder = projects[preIndex].url
         let existingWindowId = projects[preIndex].windowId
+        let badge = showWorkspaceBadge ? projects[preIndex].name : nil
         do {
             let handle = try await service.open(
-                folder: folder, existingWindowId: existingWindowId, command: command
+                folder: folder, existingWindowId: existingWindowId, command: command, badge: badge
             )
             guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
             let label: String
@@ -161,6 +174,7 @@ final class ProjectStore {
         let kind = projects[prePIndex].terminals[preTIndex].kind
         let folder = projects[prePIndex].url
         let existingWindowId = projects[prePIndex].windowId
+        let badge = showWorkspaceBadge ? projects[prePIndex].name : nil
         attention.remove(ref.id)
         do {
             let result = try await service.focus(sessionId: sessionId)
@@ -173,7 +187,7 @@ final class ProjectStore {
             } else {
                 let command: String? = kind == .claude ? "claude" : nil
                 let handle = try await service.open(
-                    folder: folder, existingWindowId: existingWindowId, command: command
+                    folder: folder, existingWindowId: existingWindowId, command: command, badge: badge
                 )
                 guard let pIndex = projects.firstIndex(where: { $0.id == project.id }),
                       let tIndex = projects[pIndex].terminals.firstIndex(where: { $0.id == ref.id }) else { return }

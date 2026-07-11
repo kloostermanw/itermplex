@@ -40,7 +40,9 @@ struct FocusResult: Equatable, Sendable {
 }
 
 protocol TerminalService: Sendable {
-    func open(folder: URL, existingWindowId: String?, command: String?) async throws -> TerminalHandle
+    /// - Parameter badge: When non-nil, set as the session's iTerm2 badge text
+    ///   (independent of the session/tab name). Nil leaves the badge untouched.
+    func open(folder: URL, existingWindowId: String?, command: String?, badge: String?) async throws -> TerminalHandle
     func focus(sessionId: String) async throws -> FocusResult
     func send(sessionId: String, text: String) async throws
     func close(sessionId: String) async throws

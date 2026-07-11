@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 struct ContentView: View {
-    @State private var store = ProjectStore()
+    let store: ProjectStore
     @State private var monitor: SessionMonitoring = ITermMonitor()
     @State private var isBusy = false
     @State private var renameTarget: (project: Project, ref: TerminalRef)?
