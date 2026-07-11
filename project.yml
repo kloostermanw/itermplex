@@ -3,11 +3,23 @@ options:
   bundleIdPrefix: com.celerypayroll
   deploymentTarget:
     macOS: "14.0"
+packages:
+  MCP:
+    url: https://github.com/modelcontextprotocol/swift-sdk
+    from: "0.12.1"
+  Hummingbird:
+    url: https://github.com/hummingbird-project/hummingbird
+    from: "2.25.0"
 targets:
   itermplex:
     type: application
     platform: macOS
     sources: [itermplex]
+    dependencies:
+      - package: MCP
+        product: MCP
+      - package: Hummingbird
+        product: Hummingbird
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.celerypayroll.itermplex

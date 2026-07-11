@@ -46,4 +46,7 @@ protocol TerminalService: Sendable {
     func focus(sessionId: String) async throws -> FocusResult
     func send(sessionId: String, text: String) async throws
     func close(sessionId: String) async throws
+    /// Returns the recent rendered screen contents for a session, most recent
+    /// lines last, capped to `maxLines`. Throws if the session is not found.
+    func readOutput(sessionId: String, maxLines: Int) async throws -> String
 }

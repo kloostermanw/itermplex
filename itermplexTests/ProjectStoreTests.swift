@@ -41,6 +41,15 @@ import Foundation
         #expect(store2.projects.map(\.name) == ["alpha", "beta"])
     }
 
+    @Test func projectIdsPersistAcrossStoreInstances() {
+        let defaults = makeDefaults()
+        let store1 = ProjectStore(defaults: defaults)
+        store1.addProject(url: makeTempFolder(named: "alpha"))
+        let originalId = store1.projects[0].id
+        let store2 = ProjectStore(defaults: defaults)
+        #expect(store2.projects.first?.id == originalId)
+    }
+
     @Test func removingProjectDropsItFromList() {
         let store = ProjectStore(defaults: makeDefaults())
         store.addProject(url: makeTempFolder(named: "keep"))
