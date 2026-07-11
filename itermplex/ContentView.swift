@@ -4,6 +4,7 @@ import AppKit
 struct ContentView: View {
     let store: ProjectStore
     @State private var monitor: SessionMonitoring = ITermMonitor()
+    @State private var mcpHost: MCPServerHost?
     @State private var isBusy = false
     @State private var renameTarget: (project: Project, ref: TerminalRef)?
     @State private var renameText = ""
@@ -61,6 +62,11 @@ struct ContentView: View {
         .task {
             store.startPeriodicRefresh()
             monitor.start { event in store.handle(event) }
+            if mcpHost == nil {
+                let host = MCPServerHost(router: MCPToolRouter(store: store))
+                mcpHost = host
+                await host.start()
+            }
         }
         .alert("Rename terminal", isPresented: renameIsPresented) {
             TextField("Name", text: $renameText)

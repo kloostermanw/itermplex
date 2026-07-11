@@ -45,6 +45,14 @@ struct ITermBridge: TerminalService {
         _ = try runBridge(["close", sessionId])
     }
 
+    func readOutput(sessionId: String, maxLines: Int) async throws -> String {
+        let json = try runBridge(["contents", sessionId, "--lines", String(maxLines)])
+        guard (json["found"] as? Bool) ?? false else {
+            throw TerminalError.bridgeFailed("Session not found.")
+        }
+        return json["output"] as? String ?? ""
+    }
+
     // MARK: - Helpers
 
     private func runBridge(_ arguments: [String]) throws -> [String: Any] {

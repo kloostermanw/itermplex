@@ -6,6 +6,7 @@ Subcommands (each prints one line of JSON to stdout on success):
   focus SESSION_ID                  -> {"found": ..., "job_name": ...}
   send SESSION_ID --text TEXT       -> {"sent": true|false}
   close SESSION_ID                  -> {"closed": true|false}
+  contents SESSION_ID [--lines N]   -> {"found": ..., "output": ...}
 """
 import sys
 import json
@@ -68,6 +69,22 @@ async def _close(connection, session_id):
     return {"closed": True}
 
 
+async def _contents(connection, session_id, lines):
+    app = await iterm2.async_get_app(connection)
+    session = app.get_session_by_id(session_id)
+    if session is None:
+        return {"found": False, "output": ""}
+    # Read the whole visible grid. Content sits at the top with blank padding
+    # below, so we trim trailing blank rows first, then keep the last `lines`.
+    contents = await session.async_get_screen_contents()
+    rows = [contents.line(i).string.rstrip() for i in range(contents.number_of_lines)]
+    while rows and rows[-1] == "":
+        rows.pop()
+    if lines > 0:
+        rows = rows[-lines:]
+    return {"found": True, "output": "\n".join(rows)}
+
+
 def main():
     parser = argparse.ArgumentParser(description="itermplex iTerm2 bridge")
     sub = parser.add_subparsers(dest="subcommand", required=True)
@@ -83,6 +100,9 @@ def main():
     p_send.add_argument("--text", dest="text", required=True)
     p_close = sub.add_parser("close")
     p_close.add_argument("session_id")
+    p_contents = sub.add_parser("contents")
+    p_contents.add_argument("session_id")
+    p_contents.add_argument("--lines", dest="lines", type=int, default=50)
     args = parser.parse_args()
 
     holder = {}
@@ -96,6 +116,8 @@ def main():
             holder["value"] = await _send(connection, args.session_id, args.text)
         elif args.subcommand == "close":
             holder["value"] = await _close(connection, args.session_id)
+        elif args.subcommand == "contents":
+            holder["value"] = await _contents(connection, args.session_id, args.lines)
 
     try:
         iterm2.run_until_complete(run, retry=False)

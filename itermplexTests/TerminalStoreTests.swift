@@ -22,6 +22,8 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
     var handles: [TerminalHandle] = []
     var focusResult = FocusResult(found: true, jobName: nil)
     var sendCalls: [(sessionId: String, text: String)] = []
+    var readOutputCalls: [(sessionId: String, maxLines: Int)] = []
+    var readOutputResult = ""
     var errorToThrow: TerminalError?
     private var openIndex = 0
 
@@ -49,6 +51,12 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
     func close(sessionId: String) async throws {
         if let error = errorToThrow { throw error }
         closeCalls.append(sessionId)
+    }
+
+    func readOutput(sessionId: String, maxLines: Int) async throws -> String {
+        if let error = errorToThrow { throw error }
+        readOutputCalls.append((sessionId, maxLines))
+        return readOutputResult
     }
 }
 
