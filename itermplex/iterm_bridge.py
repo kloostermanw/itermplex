@@ -2,19 +2,28 @@
 """Bridge between itermplex and iTerm2's Python API.
 
 Subcommands (each prints one line of JSON to stdout on success):
-  open FOLDER [--window WINDOW_ID] [--command CMD]  -> {"session_id": ..., "window_id": ...}
+  open FOLDER [--window WINDOW_ID] [--command CMD] [--badge TEXT]  -> {"session_id": ..., "window_id": ...}
   focus SESSION_ID                  -> {"found": ..., "job_name": ...}
   send SESSION_ID --text TEXT       -> {"sent": true|false}
   close SESSION_ID                  -> {"closed": true|false}
 """
 import sys
 import json
+import base64
 import shlex
 import argparse
 import iterm2
 
 
-async def _open(connection, folder, window_id, command):
+async def _set_badge(session, text):
+    # iTerm2 badge format is a base64-encoded string set via OSC 1337. We inject
+    # it as program output (not typed at the prompt) so it never touches the
+    # command line. See https://iterm2.com/documentation-badges.html.
+    encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
+    await session.async_inject(b"\033]1337;SetBadgeFormat=" + encoded.encode("ascii") + b"\a")
+
+
+async def _open(connection, folder, window_id, command, badge):
     app = await iterm2.async_get_app(connection)
     window = app.get_window_by_id(window_id) if window_id else None
     if window is not None:
@@ -23,6 +32,8 @@ async def _open(connection, folder, window_id, command):
     else:
         window = await iterm2.Window.async_create(connection)
         session = window.current_tab.current_session
+    if badge:
+        await _set_badge(session, badge)
     await session.async_send_text("cd " + shlex.quote(folder) + "\n")
     if command:
         await session.async_send_text(command + "\n")
@@ -64,6 +75,7 @@ def main():
     p_open.add_argument("folder")
     p_open.add_argument("--window", dest="window", default=None)
     p_open.add_argument("--command", dest="command", default=None)
+    p_open.add_argument("--badge", dest="badge", default=None)
     p_focus = sub.add_parser("focus")
     p_focus.add_argument("session_id")
     p_send = sub.add_parser("send")
@@ -77,7 +89,7 @@ def main():
 
     async def run(connection):
         if args.subcommand == "open":
-            holder["value"] = await _open(connection, args.folder, args.window, args.command)
+            holder["value"] = await _open(connection, args.folder, args.window, args.command, args.badge)
         elif args.subcommand == "focus":
             holder["value"] = await _focus(connection, args.session_id)
         elif args.subcommand == "send":

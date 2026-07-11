@@ -9,13 +9,16 @@ struct ITermBridge: TerminalService {
         self.pythonEnvironment = pythonEnvironment
     }
 
-    func open(folder: URL, existingWindowId: String?, command: String?) async throws -> TerminalHandle {
+    func open(folder: URL, existingWindowId: String?, command: String?, badge: String?) async throws -> TerminalHandle {
         var args = ["open", folder.path]
         if let windowId = existingWindowId {
             args += ["--window", windowId]
         }
         if let command {
             args += ["--command", command]
+        }
+        if let badge {
+            args += ["--badge", badge]
         }
         let json = try runBridge(args)
         guard let sessionId = json["session_id"] as? String,
