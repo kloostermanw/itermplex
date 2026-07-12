@@ -14,6 +14,23 @@ private struct ExplodingChecker: ReleaseChecking {
     }
 }
 
+/// Returns a different result on each successive call, so a test can tell whether a
+/// second `checkForUpdates` actually reached the network call or was short-circuited
+/// before it.
+private actor SequencedChecker: ReleaseChecking {
+    private var calls = 0
+    private let results: [Result<GitHubRelease, any Error>]
+
+    init(_ results: [Result<GitHubRelease, any Error>]) {
+        self.results = results
+    }
+
+    func latestRelease() async throws -> GitHubRelease {
+        defer { calls += 1 }
+        return try results[min(calls, results.count - 1)].get()
+    }
+}
+
 private func release(tag: String) -> GitHubRelease {
     let json = """
     {"tag_name": "\(tag)", "name": "\(tag)", "body": "",
@@ -62,10 +79,22 @@ private func freshDefaults() -> UserDefaults {
 
     @Test func backgroundCheckDoesNotDisturbAvailableState() async {
         let defaults = freshDefaults()
+        let now = Date(timeIntervalSince1970: 10_000)
+        // A second, distinct release result stands in for "what the network would say if
+        // the background check actually ran": if the active-state guard didn't short-circuit
+        // it, this result (not newer than currentVersion) would flip state to .idle. throttle
+        // is 0 and `now` is fixed so the pre-existing throttle check can't be what blocks the
+        // second call instead of the guard.
+        let checker = SequencedChecker([
+            .success(release(tag: "v1.1.0")),
+            .success(release(tag: "v1.0.0"))
+        ])
         let service = UpdateService(
-            checker: StubChecker(result: .success(release(tag: "v1.1.0"))),
+            checker: checker,
             defaults: defaults,
-            currentVersion: AppVersion("1.0.0")
+            currentVersion: AppVersion("1.0.0"),
+            throttle: 0,
+            now: { now }
         )
         await service.checkForUpdates(userInitiated: true)
         #expect(service.state == .available(release(tag: "v1.1.0")))
