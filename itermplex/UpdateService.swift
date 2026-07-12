@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import AppKit
+import os
 
 @MainActor
 @Observable
@@ -26,6 +27,8 @@ final class UpdateService {
     private let lastCheckKey = "UpdateService.lastCheck"
     private let skippedTagKey = "UpdateService.skippedTag"
 
+    private static let logger = Logger(subsystem: "eu.kloosterman.itermplex", category: "updates")
+
     init(
         checker: ReleaseChecking = GitHubReleaseService(),
         defaults: UserDefaults = .standard,
@@ -41,6 +44,15 @@ final class UpdateService {
     }
 
     func checkForUpdates(userInitiated: Bool) async {
+        if !userInitiated {
+            switch state {
+            case .available, .downloading, .downloaded:
+                return
+            default:
+                break
+            }
+        }
+
         if !userInitiated,
            let last = defaults.object(forKey: lastCheckKey) as? Date,
            now().timeIntervalSince(last) < throttle {
@@ -52,7 +64,7 @@ final class UpdateService {
             let release = try await checker.latestRelease()
             defaults.set(now(), forKey: lastCheckKey)
             guard release.version.isNewer(than: currentVersion) else {
-                state = .upToDate
+                state = userInitiated ? .upToDate : .idle
                 return
             }
             if !userInitiated, defaults.string(forKey: skippedTagKey) == release.tagName {
@@ -61,7 +73,12 @@ final class UpdateService {
             }
             state = .available(release)
         } catch {
-            state = userInitiated ? .failed(message: error.localizedDescription) : .idle
+            if userInitiated {
+                state = .failed(message: error.localizedDescription)
+            } else {
+                Self.logger.error("Background update check failed: \(error.localizedDescription, privacy: .public)")
+                state = .idle
+            }
         }
     }
 
