@@ -50,6 +50,30 @@ private func freshDefaults() -> UserDefaults {
         #expect(service.state == .upToDate)
     }
 
+    @Test func backgroundCheckStaysIdleWhenNotNewer() async {
+        let service = UpdateService(
+            checker: StubChecker(result: .success(release(tag: "v1.0.0"))),
+            defaults: freshDefaults(),
+            currentVersion: AppVersion("1.0.0")
+        )
+        await service.checkForUpdates(userInitiated: false)
+        #expect(service.state == .idle)
+    }
+
+    @Test func backgroundCheckDoesNotDisturbAvailableState() async {
+        let defaults = freshDefaults()
+        let service = UpdateService(
+            checker: StubChecker(result: .success(release(tag: "v1.1.0"))),
+            defaults: defaults,
+            currentVersion: AppVersion("1.0.0")
+        )
+        await service.checkForUpdates(userInitiated: true)
+        #expect(service.state == .available(release(tag: "v1.1.0")))
+
+        await service.checkForUpdates(userInitiated: false)
+        #expect(service.state == .available(release(tag: "v1.1.0")))
+    }
+
     @Test func backgroundCheckThrottled() async {
         let defaults = freshDefaults()
         let now = Date(timeIntervalSince1970: 10_000)
