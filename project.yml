@@ -1,6 +1,6 @@
 name: itermplex
 options:
-  bundleIdPrefix: com.celerypayroll
+  bundleIdPrefix: eu.kloosterman
   deploymentTarget:
     macOS: "14.0"
 packages:
@@ -22,7 +22,7 @@ targets:
         product: Hummingbird
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.celerypayroll.itermplex
+        PRODUCT_BUNDLE_IDENTIFIER: eu.kloosterman.itermplex
         GENERATE_INFOPLIST_FILE: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_NSAppleEventsUsageDescription: "itermplex controls iTerm2 to open and focus terminals."
@@ -40,7 +40,7 @@ targets:
       - target: itermplex
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.celerypayroll.itermplexTests
+        PRODUCT_BUNDLE_IDENTIFIER: eu.kloosterman.itermplexTests
         GENERATE_INFOPLIST_FILE: YES
         SWIFT_VERSION: "6.0"
         CODE_SIGNING_REQUIRED: NO
