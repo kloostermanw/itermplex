@@ -9,13 +9,16 @@ struct ITermBridge: TerminalService {
         self.pythonEnvironment = pythonEnvironment
     }
 
-    func open(folder: URL, existingWindowId: String?, command: String?) async throws -> TerminalHandle {
+    func open(folder: URL, existingWindowId: String?, command: String?, badge: String?) async throws -> TerminalHandle {
         var args = ["open", folder.path]
         if let windowId = existingWindowId {
             args += ["--window", windowId]
         }
         if let command {
             args += ["--command", command]
+        }
+        if let badge {
+            args += ["--badge", badge]
         }
         let json = try runBridge(args)
         guard let sessionId = json["session_id"] as? String,
@@ -40,6 +43,14 @@ struct ITermBridge: TerminalService {
 
     func close(sessionId: String) async throws {
         _ = try runBridge(["close", sessionId])
+    }
+
+    func readOutput(sessionId: String, maxLines: Int) async throws -> String {
+        let json = try runBridge(["contents", sessionId, "--lines", String(maxLines)])
+        guard (json["found"] as? Bool) ?? false else {
+            throw TerminalError.bridgeFailed("Session not found.")
+        }
+        return json["output"] as? String ?? ""
     }
 
     // MARK: - Helpers

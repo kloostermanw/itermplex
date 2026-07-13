@@ -6,6 +6,21 @@ enum ClaudeRunState: Equatable {
     case exited
 }
 
+/// Errors surfaced by `ProjectStore`'s programmatic (MCP-facing) helpers.
+enum StoreError: LocalizedError, Equatable {
+    case unknownProject
+    case unknownSession
+    case terminal(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unknownProject: return "No workspace has that id."
+        case .unknownSession: return "No tracked terminal has that session id."
+        case let .terminal(message): return message
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class ProjectStore {
@@ -30,16 +45,29 @@ final class ProjectStore {
     private let service: TerminalService
     private let gitProvider: GitInfoProviding
     private let storageKey = "itermplex.projects.bookmarks"
+    private let badgeKey = "itermplex.showWorkspaceBadge"
     private var refreshTask: Task<Void, Never>?
 
+    /// When on, newly opened (or reopened) sessions get the workspace name as an
+    /// iTerm2 badge. Off by default. Persisted; changing it affects future
+    /// sessions only (existing sessions are not retroactively updated).
+    var showWorkspaceBadge: Bool {
+        didSet {
+            guard showWorkspaceBadge != oldValue else { return }
+            defaults.set(showWorkspaceBadge, forKey: badgeKey)
+        }
+    }
+
     private struct StoredProject: Codable {
+        var id: UUID
         var bookmark: Data
         var terminals: [TerminalRef]
         var terminalSeq: Int
         var claudeSeq: Int
         var windowId: String?
 
-        init(bookmark: Data, terminals: [TerminalRef], terminalSeq: Int, claudeSeq: Int, windowId: String?) {
+        init(id: UUID, bookmark: Data, terminals: [TerminalRef], terminalSeq: Int, claudeSeq: Int, windowId: String?) {
+            self.id = id
             self.bookmark = bookmark
             self.terminals = terminals
             self.terminalSeq = terminalSeq
@@ -48,11 +76,14 @@ final class ProjectStore {
         }
 
         private enum CodingKeys: String, CodingKey {
-            case bookmark, terminals, terminalSeq, claudeSeq, windowId
+            case id, bookmark, terminals, terminalSeq, claudeSeq, windowId
         }
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
+            // Legacy records predate persisted ids; mint one so workspace ids
+            // are stable from this launch onward.
+            id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
             bookmark = try container.decode(Data.self, forKey: .bookmark)
             terminals = try container.decode([TerminalRef].self, forKey: .terminals)
             terminalSeq = try container.decode(Int.self, forKey: .terminalSeq)
@@ -69,6 +100,7 @@ final class ProjectStore {
         self.defaults = defaults
         self.service = service
         self.gitProvider = gitProvider
+        self.showWorkspaceBadge = defaults.bool(forKey: badgeKey)
         load()
     }
 
@@ -100,6 +132,24 @@ final class ProjectStore {
         save()
     }
 
+    func move(id: UUID, before targetId: UUID) {
+        guard id != targetId,
+              let from = projects.firstIndex(where: { $0.id == id }),
+              projects.contains(where: { $0.id == targetId }) else { return }
+        let item = projects.remove(at: from)
+        guard let insertAt = projects.firstIndex(where: { $0.id == targetId }) else { return }
+        projects.insert(item, at: insertAt)
+        save()
+    }
+
+    func moveToEnd(id: UUID) {
+        guard let from = projects.firstIndex(where: { $0.id == id }),
+              from != projects.count - 1 else { return }
+        let item = projects.remove(at: from)
+        projects.append(item)
+        save()
+    }
+
     func openTerminal(for project: Project) async {
         await openSession(for: project, command: nil, kind: .terminal)
     }
@@ -109,31 +159,81 @@ final class ProjectStore {
     }
 
     private func openSession(for project: Project, command: String?, kind: TerminalKind) async {
-        guard let preIndex = projects.firstIndex(where: { $0.id == project.id }) else { return }
+        do {
+            _ = try await openSessionThrowing(for: project, command: command, kind: kind)
+        } catch {
+            lastError = (error as? TerminalError)?.errorDescription
+                ?? (error as? StoreError)?.errorDescription
+                ?? error.localizedDescription
+        }
+    }
+
+    /// Opens a session and returns the new terminal ref, propagating failures
+    /// instead of routing them to `lastError`. The UI paths use
+    /// `openSession`; the MCP router uses this.
+    @discardableResult
+    func openSessionThrowing(for project: Project, command: String?, kind: TerminalKind) async throws -> TerminalRef {
+        guard let preIndex = projects.firstIndex(where: { $0.id == project.id }) else {
+            throw StoreError.unknownProject
+        }
         let folder = projects[preIndex].url
         let existingWindowId = projects[preIndex].windowId
+        let badge = showWorkspaceBadge ? projects[preIndex].name : nil
+        let handle: TerminalHandle
         do {
-            let handle = try await service.open(
-                folder: folder, existingWindowId: existingWindowId, command: command
+            handle = try await service.open(
+                folder: folder, existingWindowId: existingWindowId, command: command, badge: badge
             )
-            guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
-            let label: String
-            switch kind {
-            case .terminal:
-                projects[index].terminalSeq += 1
-                label = "Terminal \(projects[index].terminalSeq)"
-            case .claude:
-                projects[index].claudeSeq += 1
-                label = "Claude \(projects[index].claudeSeq)"
-            }
-            projects[index].windowId = handle.windowId
-            projects[index].terminals.append(
-                TerminalRef(label: label, sessionId: handle.sessionId, kind: kind)
-            )
-            save()
         } catch {
-            lastError = (error as? TerminalError)?.errorDescription ?? error.localizedDescription
+            throw StoreError.terminal((error as? TerminalError)?.errorDescription ?? error.localizedDescription)
         }
+        guard let index = projects.firstIndex(where: { $0.id == project.id }) else {
+            throw StoreError.unknownProject
+        }
+        let label: String
+        switch kind {
+        case .terminal:
+            projects[index].terminalSeq += 1
+            label = "Terminal \(projects[index].terminalSeq)"
+        case .claude:
+            projects[index].claudeSeq += 1
+            label = "Claude \(projects[index].claudeSeq)"
+        }
+        projects[index].windowId = handle.windowId
+        let ref = TerminalRef(label: label, sessionId: handle.sessionId, kind: kind)
+        projects[index].terminals.append(ref)
+        save()
+        return ref
+    }
+
+    /// Focuses a tracked session by its iTerm2 session id. Throws
+    /// `unknownSession` if no tracked terminal owns that id.
+    @discardableResult
+    func focus(sessionId: String) async throws -> FocusResult {
+        guard let (p, t) = indexOfSession(sessionId) else { throw StoreError.unknownSession }
+        let refId = projects[p].terminals[t].id
+        attention.remove(refId)
+        do {
+            return try await service.focus(sessionId: sessionId)
+        } catch {
+            throw StoreError.terminal((error as? TerminalError)?.errorDescription ?? error.localizedDescription)
+        }
+    }
+
+    /// Closes a tracked session in iTerm2 and drops its ref from the store.
+    func closeSession(sessionId: String) async throws {
+        guard let (p, t) = indexOfSession(sessionId) else { throw StoreError.unknownSession }
+        let refId = projects[p].terminals[t].id
+        do {
+            try await service.close(sessionId: sessionId)
+        } catch {
+            throw StoreError.terminal((error as? TerminalError)?.errorDescription ?? error.localizedDescription)
+        }
+        guard let (np, _) = indexOfSession(sessionId) else { return }
+        projects[np].terminals.removeAll { $0.id == refId }
+        attention.remove(refId)
+        jobNames[refId] = nil
+        save()
     }
 
     func activate(_ ref: TerminalRef, in project: Project) async {
@@ -143,6 +243,7 @@ final class ProjectStore {
         let kind = projects[prePIndex].terminals[preTIndex].kind
         let folder = projects[prePIndex].url
         let existingWindowId = projects[prePIndex].windowId
+        let badge = showWorkspaceBadge ? projects[prePIndex].name : nil
         attention.remove(ref.id)
         do {
             let result = try await service.focus(sessionId: sessionId)
@@ -155,7 +256,7 @@ final class ProjectStore {
             } else {
                 let command: String? = kind == .claude ? "claude" : nil
                 let handle = try await service.open(
-                    folder: folder, existingWindowId: existingWindowId, command: command
+                    folder: folder, existingWindowId: existingWindowId, command: command, badge: badge
                 )
                 guard let pIndex = projects.firstIndex(where: { $0.id == project.id }),
                       let tIndex = projects[pIndex].terminals.firstIndex(where: { $0.id == ref.id }) else { return }
@@ -246,6 +347,61 @@ final class ProjectStore {
         }
     }
 
+    // MARK: - MCP helpers
+
+    /// Sends raw text to a known session by its iTerm2 session id. Throws
+    /// `unknownSession` if no tracked terminal owns that id.
+    func sendText(_ text: String, toSessionId sessionId: String) async throws {
+        guard indexOfSession(sessionId) != nil else { throw StoreError.unknownSession }
+        do {
+            try await service.send(sessionId: sessionId, text: text)
+        } catch {
+            throw StoreError.terminal((error as? TerminalError)?.errorDescription ?? error.localizedDescription)
+        }
+    }
+
+    /// Reads recent rendered output for a known session.
+    func readOutput(sessionId: String, maxLines: Int) async throws -> String {
+        guard indexOfSession(sessionId) != nil else { throw StoreError.unknownSession }
+        do {
+            return try await service.readOutput(sessionId: sessionId, maxLines: maxLines)
+        } catch {
+            throw StoreError.terminal((error as? TerminalError)?.errorDescription ?? error.localizedDescription)
+        }
+    }
+
+    /// Restarts a tracked session: closes the current session and opens a
+    /// fresh one in the same window, re-running the kind's command (`claude`
+    /// for claude rows). The terminal ref keeps its id, label, and kind; its
+    /// `sessionId` is updated to the new session. Returns the updated ref.
+    @discardableResult
+    func restart(sessionId: String) async throws -> TerminalRef {
+        guard let (p, t) = indexOfSession(sessionId) else { throw StoreError.unknownSession }
+        let kind = projects[p].terminals[t].kind
+        let folder = projects[p].url
+        let existingWindowId = projects[p].windowId
+        let badge = showWorkspaceBadge ? projects[p].name : nil
+        let command: String? = kind == .claude ? "claude" : nil
+        do {
+            try? await service.close(sessionId: sessionId)
+            let handle = try await service.open(
+                folder: folder, existingWindowId: existingWindowId, command: command, badge: badge
+            )
+            guard let (np, nt) = indexOfSession(sessionId) else { throw StoreError.unknownSession }
+            let oldId = projects[np].terminals[nt].id
+            projects[np].windowId = handle.windowId
+            projects[np].terminals[nt].sessionId = handle.sessionId
+            attention.remove(oldId)
+            jobNames[oldId] = nil
+            save()
+            return projects[np].terminals[nt]
+        } catch let error as StoreError {
+            throw error
+        } catch {
+            throw StoreError.terminal((error as? TerminalError)?.errorDescription ?? error.localizedDescription)
+        }
+    }
+
     func refreshAllGitInfo() async {
         let snapshot = projects
         let provider = gitProvider
@@ -299,6 +455,7 @@ final class ProjectStore {
                 relativeTo: nil, bookmarkDataIsStale: &isStale
             ) else { continue }
             loaded.append(Project(
+                id: record.id,
                 url: url.standardizedFileURL,
                 terminals: record.terminals,
                 windowId: record.windowId,
@@ -316,6 +473,7 @@ final class ProjectStore {
                 options: [], includingResourceValuesForKeys: nil, relativeTo: nil
             ) else { return nil }
             let record = StoredProject(
+                id: project.id,
                 bookmark: bookmark,
                 terminals: project.terminals,
                 terminalSeq: project.terminalSeq,

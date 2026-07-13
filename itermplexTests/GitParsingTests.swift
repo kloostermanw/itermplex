@@ -39,4 +39,44 @@ import Foundation
         #expect(GitParsing.ownerRepo(fromRemoteURL: "https://gitlab.com/a/b.git") == nil)
         #expect(GitParsing.ownerRepo(fromRemoteURL: "not a url") == nil)
     }
+
+    @Test func checksSummaryTotalsAndFailures() {
+        let s = ChecksSummary(passing: 291, failing: 11, cancelled: 3, skipped: 3, pending: 0)
+        #expect(s.total == 308)
+        #expect(s.hasFailures == true)
+        let clean = ChecksSummary(passing: 291, failing: 0, cancelled: 0, skipped: 3, pending: 0)
+        #expect(clean.hasFailures == false)
+        #expect(clean.total == 294)
+    }
+
+    @Test func defaultBranchStripsOriginPrefix() {
+        #expect(GitParsing.defaultBranch(fromSymbolicRef: "origin/develop\n") == "develop")
+        #expect(GitParsing.defaultBranch(fromSymbolicRef: "refs/remotes/origin/main") == "main")
+        #expect(GitParsing.defaultBranch(fromSymbolicRef: "") == nil)
+    }
+
+    @Test func checksSummaryTalliesBuckets() {
+        let json = """
+        [{"bucket":"pass"},{"bucket":"pass"},{"bucket":"fail"},{"bucket":"cancel"},{"bucket":"skipping"},{"bucket":"pending"}]
+        """
+        let s = GitParsing.checksSummary(fromBucketJSON: json)
+        #expect(s?.passing == 2)
+        #expect(s?.failing == 1)
+        #expect(s?.cancelled == 1)
+        #expect(s?.skipped == 1)
+        #expect(s?.pending == 1)
+    }
+
+    @Test func checksSummaryNilOnEmptyOrInvalid() {
+        #expect(GitParsing.checksSummary(fromBucketJSON: "") == nil)
+        #expect(GitParsing.checksSummary(fromBucketJSON: "not json") == nil)
+        #expect(GitParsing.checksSummary(fromBucketJSON: "[]") == nil)
+    }
+
+    @Test func checksSummaryTextListsNonzeroCategories() {
+        let failing = ChecksSummary(passing: 291, failing: 11, cancelled: 3, skipped: 3, pending: 0)
+        #expect(failing.summaryText == "11 failing, 3 cancelled, 3 skipped, 291 successfull checks")
+        let clean = ChecksSummary(passing: 291, failing: 0, cancelled: 0, skipped: 3, pending: 0)
+        #expect(clean.summaryText == "3 skipped, 291 successfull checks")
+    }
 }

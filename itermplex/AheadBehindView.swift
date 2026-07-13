@@ -5,14 +5,14 @@ struct AheadBehindView: View {
     let ahead: Int
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 3) {
             HStack(spacing: 2) {
-                Text("\(behind)")
-                Image(systemName: "chevron.down")
+                Image(systemName: "arrow.up")
+                Text("\(ahead)")
             }
             HStack(spacing: 2) {
-                Text("\(ahead)")
-                Image(systemName: "chevron.up")
+                Image(systemName: "arrow.down")
+                Text("\(behind)")
             }
         }
         .font(.caption.monospacedDigit())

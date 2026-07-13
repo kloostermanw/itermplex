@@ -16,18 +16,20 @@ private struct LegacyStored: Codable {
 }
 
 final class FakeTerminalService: TerminalService, @unchecked Sendable {
-    var openCalls: [(folder: URL, existingWindowId: String?, command: String?)] = []
+    var openCalls: [(folder: URL, existingWindowId: String?, command: String?, badge: String?)] = []
     var focusCalls: [String] = []
     var closeCalls: [String] = []
     var handles: [TerminalHandle] = []
     var focusResult = FocusResult(found: true, jobName: nil)
     var sendCalls: [(sessionId: String, text: String)] = []
+    var readOutputCalls: [(sessionId: String, maxLines: Int)] = []
+    var readOutputResult = ""
     var errorToThrow: TerminalError?
     private var openIndex = 0
 
-    func open(folder: URL, existingWindowId: String?, command: String?) async throws -> TerminalHandle {
+    func open(folder: URL, existingWindowId: String?, command: String?, badge: String?) async throws -> TerminalHandle {
         if let error = errorToThrow { throw error }
-        openCalls.append((folder, existingWindowId, command))
+        openCalls.append((folder, existingWindowId, command, badge))
         let handle = openIndex < handles.count
             ? handles[openIndex]
             : TerminalHandle(sessionId: "sess-\(openIndex + 1)", windowId: "win-1")
@@ -49,6 +51,12 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
     func close(sessionId: String) async throws {
         if let error = errorToThrow { throw error }
         closeCalls.append(sessionId)
+    }
+
+    func readOutput(sessionId: String, maxLines: Int) async throws -> String {
+        if let error = errorToThrow { throw error }
+        readOutputCalls.append((sessionId, maxLines))
+        return readOutputResult
     }
 }
 
@@ -469,6 +477,58 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
         store.removeTerminal(ref, in: store.projects[0])
         #expect(!store.attention.contains(ref.id))
         #expect(store.runState(for: ref) == .running) // jobNames entry purged -> optimistic default
+    }
+
+    @Test func workspaceBadgeSettingDefaultsOff() {
+        let store = ProjectStore(defaults: makeDefaults(), service: FakeTerminalService())
+        #expect(store.showWorkspaceBadge == false)
+    }
+
+    @Test func openPassesNilBadgeWhenSettingOff() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: makeTempFolder(named: "proj"))
+
+        await store.openTerminal(for: store.projects[0])
+        #expect(fake.openCalls[0].badge == nil)
+    }
+
+    @Test func openPassesWorkspaceNameAsBadgeWhenSettingOn() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "sess-A", windowId: "win-1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.showWorkspaceBadge = true
+        store.addProject(url: makeTempFolder(named: "acme-api"))
+
+        await store.openClaude(for: store.projects[0])
+        #expect(fake.openCalls[0].badge == "acme-api")
+    }
+
+    @Test func workspaceBadgeSettingPersistsAcrossStoreInstances() {
+        let defaults = makeDefaults()
+        let store1 = ProjectStore(defaults: defaults, service: FakeTerminalService())
+        store1.showWorkspaceBadge = true
+
+        let store2 = ProjectStore(defaults: defaults, service: FakeTerminalService())
+        #expect(store2.showWorkspaceBadge == true)
+    }
+
+    @Test func reopeningDeadSessionCarriesBadgeWhenSettingOn() async {
+        let fake = FakeTerminalService()
+        fake.handles = [
+            TerminalHandle(sessionId: "sess-A", windowId: "win-1"),
+            TerminalHandle(sessionId: "sess-B", windowId: "win-1"),
+        ]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.showWorkspaceBadge = true
+        store.addProject(url: makeTempFolder(named: "acme-api"))
+        await store.openTerminal(for: store.projects[0])
+
+        fake.focusResult = FocusResult(found: false, jobName: nil)
+        await store.activate(store.projects[0].terminals[0], in: store.projects[0])
+        #expect(fake.openCalls.count == 2)
+        #expect(fake.openCalls[1].badge == "acme-api")
     }
 
     @Test func terminatedEventMarksExitedAndKeepsRef() async {

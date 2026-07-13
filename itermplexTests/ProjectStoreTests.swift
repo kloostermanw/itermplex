@@ -41,6 +41,15 @@ import Foundation
         #expect(store2.projects.map(\.name) == ["alpha", "beta"])
     }
 
+    @Test func projectIdsPersistAcrossStoreInstances() {
+        let defaults = makeDefaults()
+        let store1 = ProjectStore(defaults: defaults)
+        store1.addProject(url: makeTempFolder(named: "alpha"))
+        let originalId = store1.projects[0].id
+        let store2 = ProjectStore(defaults: defaults)
+        #expect(store2.projects.first?.id == originalId)
+    }
+
     @Test func removingProjectDropsItFromList() {
         let store = ProjectStore(defaults: makeDefaults())
         store.addProject(url: makeTempFolder(named: "keep"))
@@ -69,5 +78,70 @@ import Foundation
         #expect(store1.projects.map(\.name) == ["second", "first"])
         let store2 = ProjectStore(defaults: defaults)
         #expect(store2.projects.map(\.name) == ["second", "first"])
+    }
+
+    @Test func moveBeforeReordersProjects() {
+        let store = ProjectStore(defaults: makeDefaults())
+        store.addProject(url: makeTempFolder(named: "a"))
+        store.addProject(url: makeTempFolder(named: "b"))
+        store.addProject(url: makeTempFolder(named: "c"))
+        let a = store.projects[0].id
+        let c = store.projects[2].id
+        store.move(id: a, before: c)
+        #expect(store.projects.map(\.name) == ["b", "a", "c"])
+    }
+
+    @Test func moveBeforeSelfIsNoOp() {
+        let store = ProjectStore(defaults: makeDefaults())
+        store.addProject(url: makeTempFolder(named: "a"))
+        store.addProject(url: makeTempFolder(named: "b"))
+        let a = store.projects[0].id
+        store.move(id: a, before: a)
+        #expect(store.projects.map(\.name) == ["a", "b"])
+    }
+
+    @Test func moveBeforeMissingTargetIsNoOp() {
+        let store = ProjectStore(defaults: makeDefaults())
+        store.addProject(url: makeTempFolder(named: "a"))
+        store.addProject(url: makeTempFolder(named: "b"))
+        let a = store.projects[0].id
+        store.move(id: a, before: UUID())
+        #expect(store.projects.map(\.name) == ["a", "b"])
+    }
+
+    @Test func moveBeforeMissingSourceIsNoOp() {
+        let store = ProjectStore(defaults: makeDefaults())
+        store.addProject(url: makeTempFolder(named: "a"))
+        store.addProject(url: makeTempFolder(named: "b"))
+        let b = store.projects[1].id
+        store.move(id: UUID(), before: b)
+        #expect(store.projects.map(\.name) == ["a", "b"])
+    }
+
+    @Test func moveToEndMovesProjectToLast() {
+        let store = ProjectStore(defaults: makeDefaults())
+        store.addProject(url: makeTempFolder(named: "a"))
+        store.addProject(url: makeTempFolder(named: "b"))
+        store.addProject(url: makeTempFolder(named: "c"))
+        let a = store.projects[0].id
+        store.moveToEnd(id: a)
+        #expect(store.projects.map(\.name) == ["b", "c", "a"])
+    }
+
+    @Test func moveToEndOnLastIsNoOp() {
+        let store = ProjectStore(defaults: makeDefaults())
+        store.addProject(url: makeTempFolder(named: "a"))
+        store.addProject(url: makeTempFolder(named: "b"))
+        let b = store.projects[1].id
+        store.moveToEnd(id: b)
+        #expect(store.projects.map(\.name) == ["a", "b"])
+    }
+
+    @Test func moveToEndMissingIsNoOp() {
+        let store = ProjectStore(defaults: makeDefaults())
+        store.addProject(url: makeTempFolder(named: "a"))
+        store.addProject(url: makeTempFolder(named: "b"))
+        store.moveToEnd(id: UUID())
+        #expect(store.projects.map(\.name) == ["a", "b"])
     }
 }

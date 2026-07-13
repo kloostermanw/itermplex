@@ -1,17 +1,30 @@
 name: itermplex
 options:
-  bundleIdPrefix: com.celerypayroll
+  bundleIdPrefix: eu.kloosterman
   deploymentTarget:
     macOS: "14.0"
+packages:
+  MCP:
+    url: https://github.com/modelcontextprotocol/swift-sdk
+    from: "0.12.1"
+  Hummingbird:
+    url: https://github.com/hummingbird-project/hummingbird
+    from: "2.25.0"
 targets:
   itermplex:
     type: application
     platform: macOS
     sources: [itermplex]
+    dependencies:
+      - package: MCP
+        product: MCP
+      - package: Hummingbird
+        product: Hummingbird
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.celerypayroll.itermplex
+        PRODUCT_BUNDLE_IDENTIFIER: eu.kloosterman.itermplex
         GENERATE_INFOPLIST_FILE: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_NSAppleEventsUsageDescription: "itermplex controls iTerm2 to open and focus terminals."
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
@@ -27,7 +40,7 @@ targets:
       - target: itermplex
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.celerypayroll.itermplexTests
+        PRODUCT_BUNDLE_IDENTIFIER: eu.kloosterman.itermplexTests
         GENERATE_INFOPLIST_FILE: YES
         SWIFT_VERSION: "6.0"
         CODE_SIGNING_REQUIRED: NO
