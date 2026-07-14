@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WorkspaceCardView: View {
     let project: Project
+    let collapsed: Bool
     let gitInfo: GitInfo?
     let runState: (TerminalRef) -> ClaudeRunState
     let needsAttention: (TerminalRef) -> Bool
@@ -12,6 +13,7 @@ struct WorkspaceCardView: View {
     let onOpenTerminal: () -> Void
     let onOpenClaude: () -> Void
     let onRemoveProject: () -> Void
+    let onToggleCollapsed: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -29,16 +31,19 @@ struct WorkspaceCardView: View {
                 ChecksLineView(summary: checks)
                     .padding(.leading, 24)
             }
-            children
+            if !collapsed {
+                children
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .contentShape(Rectangle())
+        .animation(.default, value: collapsed)
     }
 
     private var header: some View {
         HStack(spacing: 6) {
-            Image(systemName: "chevron.right")
+            Image(systemName: collapsed ? "chevron.right" : "chevron.down")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text(project.name)
@@ -55,6 +60,8 @@ struct WorkspaceCardView: View {
                 }
             }
         }
+        .contentShape(Rectangle())
+        .onTapGesture { onToggleCollapsed() }
         .contextMenu {
             Button("Terminal", action: onOpenTerminal)
             Button("Claude", action: onOpenClaude)

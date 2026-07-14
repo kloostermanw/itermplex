@@ -20,6 +20,7 @@ struct ContentView: View {
                 ForEach(store.projects) { project in
                     WorkspaceCardView(
                         project: project,
+                        collapsed: project.collapsed,
                         gitInfo: store.gitInfo[project.id],
                         runState: { store.runState(for: $0) },
                         needsAttention: { store.attention.contains($0.id) },
@@ -29,7 +30,8 @@ struct ContentView: View {
                         onCloseTerminal: { closeTerminal($0, in: project) },
                         onOpenTerminal: { openTerminal(for: project) },
                         onOpenClaude: { openClaude(for: project) },
-                        onRemoveProject: { store.remove(project) }
+                        onRemoveProject: { store.remove(project) },
+                        onToggleCollapsed: { store.toggleCollapsed(project) }
                     )
                     .draggable(project.id.uuidString)
                     .dropDestination(for: String.self) { items, _ in
