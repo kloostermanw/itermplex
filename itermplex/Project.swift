@@ -7,6 +7,7 @@ struct Project: Identifiable, Equatable {
     var windowId: String?
     var terminalSeq: Int
     var claudeSeq: Int
+    var collapsed: Bool
 
     var name: String { url.lastPathComponent }
 
@@ -21,7 +22,8 @@ struct Project: Identifiable, Equatable {
         terminals: [TerminalRef] = [],
         windowId: String? = nil,
         terminalSeq: Int = 0,
-        claudeSeq: Int = 0
+        claudeSeq: Int = 0,
+        collapsed: Bool = false
     ) {
         self.id = id
         self.url = url
@@ -29,5 +31,6 @@ struct Project: Identifiable, Equatable {
         self.windowId = windowId
         self.terminalSeq = terminalSeq
         self.claudeSeq = claudeSeq
+        self.collapsed = collapsed
     }
 }

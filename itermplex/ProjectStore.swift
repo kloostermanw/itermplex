@@ -65,18 +65,20 @@ final class ProjectStore {
         var terminalSeq: Int
         var claudeSeq: Int
         var windowId: String?
+        var collapsed: Bool
 
-        init(id: UUID, bookmark: Data, terminals: [TerminalRef], terminalSeq: Int, claudeSeq: Int, windowId: String?) {
+        init(id: UUID, bookmark: Data, terminals: [TerminalRef], terminalSeq: Int, claudeSeq: Int, windowId: String?, collapsed: Bool) {
             self.id = id
             self.bookmark = bookmark
             self.terminals = terminals
             self.terminalSeq = terminalSeq
             self.claudeSeq = claudeSeq
             self.windowId = windowId
+            self.collapsed = collapsed
         }
 
         private enum CodingKeys: String, CodingKey {
-            case id, bookmark, terminals, terminalSeq, claudeSeq, windowId
+            case id, bookmark, terminals, terminalSeq, claudeSeq, windowId, collapsed
         }
 
         init(from decoder: Decoder) throws {
@@ -89,6 +91,7 @@ final class ProjectStore {
             terminalSeq = try container.decode(Int.self, forKey: .terminalSeq)
             claudeSeq = try container.decodeIfPresent(Int.self, forKey: .claudeSeq) ?? 0
             windowId = try container.decodeIfPresent(String.self, forKey: .windowId)
+            collapsed = try container.decodeIfPresent(Bool.self, forKey: .collapsed) ?? false
         }
     }
 
@@ -333,6 +336,12 @@ final class ProjectStore {
         save()
     }
 
+    func toggleCollapsed(_ project: Project) {
+        guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
+        projects[index].collapsed.toggle()
+        save()
+    }
+
     func closeTerminal(_ ref: TerminalRef, in project: Project) async {
         guard let prePIndex = projects.firstIndex(where: { $0.id == project.id }),
               let preTIndex = projects[prePIndex].terminals.firstIndex(where: { $0.id == ref.id }) else { return }
@@ -460,7 +469,8 @@ final class ProjectStore {
                 terminals: record.terminals,
                 windowId: record.windowId,
                 terminalSeq: record.terminalSeq,
-                claudeSeq: record.claudeSeq
+                claudeSeq: record.claudeSeq,
+                collapsed: record.collapsed
             ))
         }
         projects = loaded
@@ -478,7 +488,8 @@ final class ProjectStore {
                 terminals: project.terminals,
                 terminalSeq: project.terminalSeq,
                 claudeSeq: project.claudeSeq,
-                windowId: project.windowId
+                windowId: project.windowId,
+                collapsed: project.collapsed
             )
             return try? encoder.encode(record)
         }
