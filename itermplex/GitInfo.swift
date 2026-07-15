@@ -26,9 +26,11 @@ struct GitInfo: Equatable, Sendable {
     var behind: Int
     var ahead: Int
     var hasUpstream: Bool
+    var upstreamRef: String? = nil
     var baseAhead: Int = 0
     var baseBehind: Int = 0
     var hasBase: Bool = false
+    var baseRef: String? = nil
     var issueNumber: Int?
     var prNumber: Int?
     var issueURL: URL?

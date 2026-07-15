@@ -51,12 +51,20 @@ struct WorkspaceCardView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 8)
-            HStack(spacing: 16) {
+            VStack(alignment: .trailing, spacing: 2) {
                 if let gitInfo, gitInfo.hasBase {
-                    AheadBehindView(behind: gitInfo.baseBehind, ahead: gitInfo.baseAhead)
+                    AheadBehindView(
+                        label: gitInfo.baseRef ?? "base",
+                        behind: gitInfo.baseBehind,
+                        ahead: gitInfo.baseAhead
+                    )
                 }
                 if let gitInfo, gitInfo.hasUpstream {
-                    AheadBehindView(behind: gitInfo.behind, ahead: gitInfo.ahead)
+                    AheadBehindView(
+                        label: gitInfo.upstreamRef ?? "origin/\(gitInfo.branch)",
+                        behind: gitInfo.behind,
+                        ahead: gitInfo.ahead
+                    )
                 }
             }
         }

@@ -34,16 +34,21 @@ struct GitInfoService: GitInfoProviding {
         var behind = 0
         var ahead = 0
         var hasUpstream = false
+        var upstreamRef: String?
         let revList = git(folder, ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"])
         if revList.status == 0, let parsed = GitParsing.aheadBehind(fromRevListOutput: revList.stdout) {
             behind = parsed.behind
             ahead = parsed.ahead
             hasUpstream = true
+            let upstream = git(folder, ["rev-parse", "--abbrev-ref", "@{upstream}"])
+                .stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            upstreamRef = upstream.isEmpty ? nil : upstream
         }
 
         var baseBehind = 0
         var baseAhead = 0
         var hasBase = false
+        var baseRef: String?
         let symbolicRef = git(folder, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
         if symbolicRef.status == 0,
            let base = GitParsing.defaultBranch(fromSymbolicRef: symbolicRef.stdout) {
@@ -53,6 +58,7 @@ struct GitInfoService: GitInfoProviding {
                 baseBehind = parsed.behind
                 baseAhead = parsed.ahead
                 hasBase = true
+                baseRef = "origin/\(base)"
             }
         }
 
@@ -85,7 +91,8 @@ struct GitInfoService: GitInfoProviding {
 
         return GitInfo(
             branch: branch, behind: behind, ahead: ahead, hasUpstream: hasUpstream,
-            baseAhead: baseAhead, baseBehind: baseBehind, hasBase: hasBase,
+            upstreamRef: upstreamRef,
+            baseAhead: baseAhead, baseBehind: baseBehind, hasBase: hasBase, baseRef: baseRef,
             issueNumber: issueNumber, prNumber: prNumber, issueURL: issueURL, prURL: prURL,
             checks: checks
         )
