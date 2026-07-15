@@ -13,7 +13,6 @@ struct ContentView: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 SidebarHeaderView(
-                    count: store.projects.count,
                     onRefresh: { Task { await store.refreshAllGitInfo() } },
                     onAdd: addProject
                 )

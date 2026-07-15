@@ -13,7 +13,7 @@ draggable to reorder.
 
 ```
 ┌───────────────────────────────────────────────────────────────────┐
-│ Workspaces  (2)                                       ( ⟳ )  ( + )  │  SidebarHeaderView
+│                                                       ( ⟳ )  ( + )  │  SidebarHeaderView
 ├───────────────────────────────────────────────────────────────────┤
 │ ▾ laravel-test                       origin/develop           ↑1 ↓0 │  WorkspaceCardView
 │                                      origin/feature/issue-15   ↑1 ↓0 │
