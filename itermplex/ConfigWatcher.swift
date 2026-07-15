@@ -7,8 +7,6 @@ final class ConfigWatcher {
     private let folder: URL
     private let onChange: () -> Void
     private var source: DispatchSourceFileSystemObject?
-    private var descriptor: Int32 = -1
-    private var scoped = false
 
     init(folder: URL, onChange: @escaping () -> Void) {
         self.folder = folder
@@ -17,22 +15,22 @@ final class ConfigWatcher {
 
     func start() {
         stop()
-        scoped = folder.startAccessingSecurityScopedResource()
-        descriptor = open(folder.path, O_EVTONLY)
-        guard descriptor >= 0 else {
-            if scoped { folder.stopAccessingSecurityScopedResource(); scoped = false }
+        let folder = self.folder
+        let scoped = folder.startAccessingSecurityScopedResource()
+        let fd = open(folder.path, O_EVTONLY)
+        guard fd >= 0 else {
+            if scoped { folder.stopAccessingSecurityScopedResource() }
             return
         }
         let src = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: descriptor,
+            fileDescriptor: fd,
             eventMask: [.write, .delete, .rename, .extend],
             queue: .main
         )
         src.setEventHandler { [weak self] in self?.onChange() }
-        src.setCancelHandler { [weak self] in
-            guard let self else { return }
-            if self.descriptor >= 0 { close(self.descriptor); self.descriptor = -1 }
-            if self.scoped { self.folder.stopAccessingSecurityScopedResource(); self.scoped = false }
+        src.setCancelHandler {
+            close(fd)
+            if scoped { folder.stopAccessingSecurityScopedResource() }
         }
         source = src
         src.resume()
