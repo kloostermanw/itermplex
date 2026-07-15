@@ -125,6 +125,9 @@ final class ProjectStore {
         )) != nil else { return }
         projects.append(Project(url: standardized))
         save()
+        if let added = projects.last, ConfigFile.exists(in: added.url) {
+            reconcileWithFile(added.id)
+        }
     }
 
     func remove(_ project: Project) {
@@ -505,6 +508,27 @@ final class ProjectStore {
         }
     }
 
+    /// Reads the workspace config and applies it to the current rows, preserving
+    /// live sessions and keeping running rows dropped by the file as local-only.
+    /// No-op when the file is absent (sync off).
+    func reconcileWithFile(_ projectId: UUID) {
+        guard let index = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        let url = projects[index].url
+        let config: ItermplexConfig?
+        do {
+            config = try ConfigFile.read(in: url)
+        } catch {
+            lastError = error.localizedDescription
+            return
+        }
+        guard let config else { return }
+        let result = ConfigReconcile.apply(config, to: projects[index].terminals)
+        projects[index].terminals = result.terminals
+        localOnlyTerminals.formUnion(result.localOnly)
+        lastConfigData[projectId] = ConfigFile.rawData(in: url)
+        save()
+    }
+
     private func load() {
         guard let dataArray = defaults.array(forKey: storageKey) as? [Data] else { return }
         let decoder = JSONDecoder()
@@ -527,6 +551,9 @@ final class ProjectStore {
             ))
         }
         projects = loaded
+        for project in projects where ConfigFile.exists(in: project.url) {
+            reconcileWithFile(project.id)
+        }
     }
 
     private func save() {
