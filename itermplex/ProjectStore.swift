@@ -30,6 +30,14 @@ final class ProjectStore {
     private(set) var attention: Set<UUID> = []
     private(set) var jobNames: [UUID: String] = [:]
 
+    /// Terminal ids that are tracked locally but absent from the on-disk config
+    /// (kept alive after an external removal). Cleared when the config is written.
+    private(set) var localOnlyTerminals: Set<UUID> = []
+
+    /// The exact bytes last read from or written to each workspace's config file,
+    /// used to ignore the app's own writes when the watcher fires.
+    private var lastConfigData: [UUID: Data] = [:]
+
     /// Foreground job names that mean "no agent running, just a shell".
     /// Confirmed/extended by the design spike (Task 0).
     static let shellJobNames: Set<String> = [
@@ -206,6 +214,7 @@ final class ProjectStore {
         let ref = TerminalRef(label: label, sessionId: handle.sessionId, kind: kind)
         projects[index].terminals.append(ref)
         save()
+        emitConfig(for: projects[index].id)
         return ref
     }
 
@@ -236,7 +245,9 @@ final class ProjectStore {
         projects[np].terminals.removeAll { $0.id == refId }
         attention.remove(refId)
         jobNames[refId] = nil
+        localOnlyTerminals.remove(refId)
         save()
+        emitConfig(for: projects[np].id)
     }
 
     func activate(_ ref: TerminalRef, in project: Project) async {
@@ -325,7 +336,9 @@ final class ProjectStore {
         guard let pIndex = projects.firstIndex(where: { $0.id == project.id }),
               let tIndex = projects[pIndex].terminals.firstIndex(where: { $0.id == ref.id }) else { return }
         projects[pIndex].terminals[tIndex].label = label
+        projects[pIndex].terminals[tIndex].slot = label
         save()
+        emitConfig(for: projects[pIndex].id)
     }
 
     func removeTerminal(_ ref: TerminalRef, in project: Project) {
@@ -333,7 +346,9 @@ final class ProjectStore {
         projects[pIndex].terminals.removeAll { $0.id == ref.id }
         attention.remove(ref.id)
         jobNames[ref.id] = nil
+        localOnlyTerminals.remove(ref.id)
         save()
+        emitConfig(for: project.id)
     }
 
     func toggleCollapsed(_ project: Project) {
@@ -350,7 +365,9 @@ final class ProjectStore {
             try await service.close(sessionId: sessionId)
             guard let pIndex = projects.firstIndex(where: { $0.id == project.id }) else { return }
             projects[pIndex].terminals.removeAll { $0.id == ref.id }
+            localOnlyTerminals.remove(ref.id)
             save()
+            emitConfig(for: project.id)
         } catch {
             lastError = (error as? TerminalError)?.errorDescription ?? error.localizedDescription
         }
@@ -449,6 +466,42 @@ final class ProjectStore {
                 await self?.refreshAllGitInfo()
                 try? await Task.sleep(nanoseconds: 5 * 60 * 1_000_000_000)
             }
+        }
+    }
+
+    // MARK: - Config sync
+
+    func isSyncEnabled(_ project: Project) -> Bool {
+        ConfigFile.exists(in: project.url)
+    }
+
+    /// Writes the workspace's current rows to a new `itermplex.json`, turning
+    /// sync on. Records the written bytes so the watcher ignores this write.
+    func enableConfigSync(for project: Project) {
+        guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
+        let config = ConfigReconcile.config(from: projects[index].terminals, name: nil)
+        do {
+            lastConfigData[project.id] = try ConfigFile.write(config, in: projects[index].url)
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    /// Rewrites the config file to mirror the workspace's current rows, but only
+    /// when sync is on and the content actually changed. Clears local-only marks
+    /// for the rewritten rows (they are now present in the file again).
+    private func emitConfig(for projectId: UUID) {
+        guard let index = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        let project = projects[index]
+        guard ConfigFile.exists(in: project.url) else { return }
+        let config = ConfigReconcile.config(from: project.terminals, name: nil)
+        guard let data = try? config.encoded() else { return }
+        if lastConfigData[projectId] == data { return }
+        do {
+            lastConfigData[projectId] = try ConfigFile.write(config, in: project.url)
+            localOnlyTerminals.subtract(project.terminals.map(\.id))
+        } catch {
+            lastError = error.localizedDescription
         }
     }
 
