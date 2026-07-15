@@ -18,20 +18,20 @@ struct WorkspaceCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             header
-            if let gitInfo, gitInfo.issueNumber != nil || gitInfo.prNumber != nil {
-                IssuePRLineView(
-                    issueNumber: gitInfo.issueNumber,
-                    issueURL: gitInfo.issueURL,
-                    prNumber: gitInfo.prNumber,
-                    prURL: gitInfo.prURL
-                )
-                .padding(.leading, 24)
-            }
-            if let checks = gitInfo?.checks {
-                ChecksLineView(summary: checks)
-                    .padding(.leading, 24)
-            }
             if !collapsed {
+                if let gitInfo, gitInfo.issueNumber != nil || gitInfo.prNumber != nil {
+                    IssuePRLineView(
+                        issueNumber: gitInfo.issueNumber,
+                        issueURL: gitInfo.issueURL,
+                        prNumber: gitInfo.prNumber,
+                        prURL: gitInfo.prURL
+                    )
+                    .padding(.leading, 24)
+                }
+                if let checks = gitInfo?.checks {
+                    ChecksLineView(summary: checks)
+                        .padding(.leading, 24)
+                }
                 children
             }
         }
@@ -51,20 +51,22 @@ struct WorkspaceCardView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 2) {
-                if let gitInfo, gitInfo.hasBase {
-                    AheadBehindView(
-                        label: gitInfo.baseRef ?? "base",
-                        behind: gitInfo.baseBehind,
-                        ahead: gitInfo.baseAhead
-                    )
-                }
-                if let gitInfo, gitInfo.hasUpstream {
-                    AheadBehindView(
-                        label: gitInfo.upstreamRef ?? "origin/\(gitInfo.branch)",
-                        behind: gitInfo.behind,
-                        ahead: gitInfo.ahead
-                    )
+            if !collapsed {
+                VStack(alignment: .trailing, spacing: 2) {
+                    if let gitInfo, gitInfo.hasBase {
+                        AheadBehindView(
+                            label: gitInfo.baseRef ?? "base",
+                            behind: gitInfo.baseBehind,
+                            ahead: gitInfo.baseAhead
+                        )
+                    }
+                    if let gitInfo, gitInfo.hasUpstream {
+                        AheadBehindView(
+                            label: gitInfo.upstreamRef ?? "origin/\(gitInfo.branch)",
+                            behind: gitInfo.behind,
+                            ahead: gitInfo.ahead
+                        )
+                    }
                 }
             }
         }
