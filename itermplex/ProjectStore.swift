@@ -38,6 +38,12 @@ final class ProjectStore {
     /// used to ignore the app's own writes when the watcher fires.
     private var lastConfigData: [UUID: Data] = [:]
 
+    /// Workspaces whose on-disk config differs from what the app last saw; drives
+    /// the "config changed" affordance on the card.
+    private(set) var configChangedOnDisk: Set<UUID> = []
+
+    private var watchers: [UUID: ConfigWatcher] = [:]
+
     /// Foreground job names that mean "no agent running, just a shell".
     /// Confirmed/extended by the design spike (Task 0).
     static let shellJobNames: Set<String> = [
@@ -127,6 +133,7 @@ final class ProjectStore {
         save()
         if let added = projects.last, ConfigFile.exists(in: added.url) {
             reconcileWithFile(added.id)
+            startWatching(added)
         }
     }
 
@@ -138,6 +145,9 @@ final class ProjectStore {
             attention.remove(id)
             jobNames[id] = nil
         }
+        stopWatching(project.id)
+        lastConfigData[project.id] = nil
+        configChangedOnDisk.remove(project.id)
         save()
     }
 
@@ -485,6 +495,7 @@ final class ProjectStore {
         let config = ConfigReconcile.config(from: projects[index].terminals, name: nil)
         do {
             lastConfigData[project.id] = try ConfigFile.write(config, in: projects[index].url)
+            startWatching(projects[index])
         } catch {
             lastError = error.localizedDescription
         }
@@ -529,6 +540,44 @@ final class ProjectStore {
         save()
     }
 
+    private func startWatching(_ project: Project) {
+        guard watchers[project.id] == nil, ConfigFile.exists(in: project.url) else { return }
+        let id = project.id
+        let watcher = ConfigWatcher(folder: project.url) { [weak self] in
+            self?.configFileDidChange(id)
+        }
+        watchers[id] = watcher
+        watcher.start()
+    }
+
+    private func stopWatching(_ projectId: UUID) {
+        watchers[projectId]?.stop()
+        watchers[projectId] = nil
+    }
+
+    /// Watcher callback. Disables sync if the file was deleted; otherwise raises
+    /// the change signal when the on-disk bytes differ from what we last saw.
+    func configFileDidChange(_ projectId: UUID) {
+        guard let index = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        let url = projects[index].url
+        guard ConfigFile.exists(in: url) else {
+            stopWatching(projectId)
+            lastConfigData[projectId] = nil
+            configChangedOnDisk.remove(projectId)
+            return
+        }
+        if ConfigFile.rawData(in: url) != lastConfigData[projectId] {
+            configChangedOnDisk.insert(projectId)
+        }
+    }
+
+    /// User applied a detected change: reconcile rows from the file and clear the
+    /// signal.
+    func applyConfigChanges(for project: Project) {
+        reconcileWithFile(project.id)
+        configChangedOnDisk.remove(project.id)
+    }
+
     private func load() {
         guard let dataArray = defaults.array(forKey: storageKey) as? [Data] else { return }
         let decoder = JSONDecoder()
@@ -553,6 +602,7 @@ final class ProjectStore {
         projects = loaded
         for project in projects where ConfigFile.exists(in: project.url) {
             reconcileWithFile(project.id)
+            startWatching(project)
         }
     }
 

@@ -117,4 +117,53 @@ import Foundation
         await store.activate(store.projects[0].terminals[0], in: store.projects[0])
         #expect(store.projects[0].terminals[0].sessionId == "opened-1")
     }
+
+    @Test func changeSignalSetWhenDiskDiffersAndClearedOnApply() async throws {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "s1", windowId: "w1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        let folder = tempFolder()
+        store.addProject(url: folder)
+        store.enableConfigSync(for: store.projects[0])
+        let id = store.projects[0].id
+
+        // External edit adds a terminal, then simulate the watcher firing.
+        try ConfigFile.write(
+            ItermplexConfig(name: nil, agents: [], iterm: ["Terminal 1"]),
+            in: folder
+        )
+        store.configFileDidChange(id)
+        #expect(store.configChangedOnDisk.contains(id))
+
+        store.applyConfigChanges(for: store.projects[0])
+        #expect(store.configChangedOnDisk.contains(id) == false)
+        #expect(store.projects[0].terminals.map(\.slot) == ["Terminal 1"])
+    }
+
+    @Test func ownWriteDoesNotRaiseSignal() async throws {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "s1", windowId: "w1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        let folder = tempFolder()
+        store.addProject(url: folder)
+        store.enableConfigSync(for: store.projects[0])
+        let id = store.projects[0].id
+
+        await store.openTerminal(for: store.projects[0]) // app write updates lastConfigData
+        store.configFileDidChange(id)
+        #expect(store.configChangedOnDisk.contains(id) == false)
+    }
+
+    @Test func fileDeleteDisablesSync() async throws {
+        let store = ProjectStore(defaults: makeDefaults(), service: FakeTerminalService())
+        let folder = tempFolder()
+        store.addProject(url: folder)
+        store.enableConfigSync(for: store.projects[0])
+        let id = store.projects[0].id
+
+        try FileManager.default.removeItem(at: ConfigFile.url(in: folder))
+        store.configFileDidChange(id)
+        #expect(store.isSyncEnabled(store.projects[0]) == false)
+        #expect(store.configChangedOnDisk.contains(id) == false)
+    }
 }
