@@ -223,6 +223,62 @@ import Foundation
         #expect(store.projects[0].name == "round-trip")
     }
 
+    @Test func recreatedFileAfterDeleteRaisesSignalAgain() async throws {
+        let store = ProjectStore(defaults: makeDefaults(), service: FakeTerminalService())
+        let folder = tempFolder()
+        store.addProject(url: folder)
+        store.enableConfigSync(for: store.projects[0])
+        let id = store.projects[0].id
+
+        try FileManager.default.removeItem(at: ConfigFile.url(in: folder))
+        store.configFileDidChange(id)
+        #expect(store.configChangedOnDisk.contains(id) == false)
+
+        try ConfigFile.write(
+            ItermplexConfig(name: nil, agents: [], iterm: ["Terminal 1"]),
+            in: folder
+        )
+        store.configFileDidChange(id)
+        #expect(store.configChangedOnDisk.contains(id))
+    }
+
+    @Test func applyDoesNotClearSignalWhenFileMalformed() async throws {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "s1", windowId: "w1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        let folder = tempFolder()
+        store.addProject(url: folder)
+        store.enableConfigSync(for: store.projects[0])
+        let id = store.projects[0].id
+
+        try ConfigFile.write(
+            ItermplexConfig(name: nil, agents: [], iterm: ["Terminal 1"]),
+            in: folder
+        )
+        store.configFileDidChange(id)
+        #expect(store.configChangedOnDisk.contains(id))
+
+        try Data("{ not json".utf8).write(to: ConfigFile.url(in: folder))
+        store.applyConfigChanges(for: store.projects[0])
+        #expect(store.configChangedOnDisk.contains(id))
+        #expect(store.lastError != nil)
+    }
+
+    @Test func renamingClaudeKeepsSlotStable() async throws {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "s1", windowId: "w1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        let folder = tempFolder()
+        store.addProject(url: folder)
+        await store.openClaude(for: store.projects[0])
+
+        let ref = store.projects[0].terminals[0]
+        store.rename(ref, in: store.projects[0], to: "fix bug")
+
+        #expect(store.projects[0].terminals[0].label == "fix bug")
+        #expect(store.projects[0].terminals[0].slot == "Claude 1")
+    }
+
     @Test func workspaceCardAcceptsSyncParameters() async {
         let fake = FakeTerminalService()
         fake.handles = [TerminalHandle(sessionId: "s1", windowId: "w1")]
