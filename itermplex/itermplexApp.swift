@@ -25,6 +25,13 @@ struct itermplexApp: App {
             }
         }
 
+        WindowGroup(id: "process-log", for: ProcessLogWindowID.self) { $id in
+            if let id {
+                ProcessLogWindow(store: store, id: id)
+                    .preferredColorScheme(.dark)
+            }
+        }
+
         Settings {
             SettingsView(store: store)
         }
