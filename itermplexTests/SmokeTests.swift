@@ -40,6 +40,9 @@ import Testing
             gitInfo: nil,
             runState: { _ in .running },
             needsAttention: { _ in false },
+            syncEnabled: false,
+            configChanged: false,
+            isLocalOnly: { _ in false },
             onActivate: { _ in },
             onRenameTerminal: { _ in },
             onRemoveTerminal: { _ in },
@@ -47,7 +50,9 @@ import Testing
             onOpenTerminal: {},
             onOpenClaude: {},
             onRemoveProject: {},
-            onToggleCollapsed: {}
+            onToggleCollapsed: {},
+            onEnableSync: {},
+            onApplyConfig: {}
         )
         .frame(width: 320)
 
