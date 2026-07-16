@@ -560,8 +560,10 @@ final class ProjectStore {
         watchers[projectId] = nil
     }
 
-    /// Watcher callback. Disables sync if the file was deleted; otherwise raises
-    /// the change signal when the on-disk bytes differ from what we last saw.
+    /// Watcher callback. If the file was deleted, forgets the last-seen bytes
+    /// and clears the signal, but leaves the folder watcher armed so a later
+    /// external re-create is still detected; otherwise raises the change
+    /// signal when the on-disk bytes differ from what we last saw.
     func configFileDidChange(_ projectId: UUID) {
         guard let index = projects.firstIndex(where: { $0.id == projectId }) else { return }
         let url = projects[index].url
