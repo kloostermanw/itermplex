@@ -349,7 +349,9 @@ final class ProjectStore {
         guard let pIndex = projects.firstIndex(where: { $0.id == project.id }),
               let tIndex = projects[pIndex].terminals.firstIndex(where: { $0.id == ref.id }) else { return }
         projects[pIndex].terminals[tIndex].label = label
-        projects[pIndex].terminals[tIndex].slot = label
+        if projects[pIndex].terminals[tIndex].kind == .terminal {
+            projects[pIndex].terminals[tIndex].slot = label
+        }
         save()
         emitConfig(for: projects[pIndex].id)
     }
@@ -522,23 +524,25 @@ final class ProjectStore {
     /// Reads the workspace config and applies it to the current rows, preserving
     /// live sessions and keeping running rows dropped by the file as local-only.
     /// No-op when the file is absent (sync off).
-    func reconcileWithFile(_ projectId: UUID) {
-        guard let index = projects.firstIndex(where: { $0.id == projectId }) else { return }
+    @discardableResult
+    func reconcileWithFile(_ projectId: UUID) -> Bool {
+        guard let index = projects.firstIndex(where: { $0.id == projectId }) else { return false }
         let url = projects[index].url
         let config: ItermplexConfig?
         do {
             config = try ConfigFile.read(in: url)
         } catch {
             lastError = error.localizedDescription
-            return
+            return false
         }
-        guard let config else { return }
+        guard let config else { return false }
         let result = ConfigReconcile.apply(config, to: projects[index].terminals)
         projects[index].terminals = result.terminals
         projects[index].configName = config.name
         localOnlyTerminals.formUnion(result.localOnly)
         lastConfigData[projectId] = ConfigFile.rawData(in: url)
         save()
+        return true
     }
 
     private func startWatching(_ project: Project) {
@@ -562,7 +566,6 @@ final class ProjectStore {
         guard let index = projects.firstIndex(where: { $0.id == projectId }) else { return }
         let url = projects[index].url
         guard ConfigFile.exists(in: url) else {
-            stopWatching(projectId)
             lastConfigData[projectId] = nil
             configChangedOnDisk.remove(projectId)
             return
@@ -575,8 +578,9 @@ final class ProjectStore {
     /// User applied a detected change: reconcile rows from the file and clear the
     /// signal.
     func applyConfigChanges(for project: Project) {
-        reconcileWithFile(project.id)
-        configChangedOnDisk.remove(project.id)
+        if reconcileWithFile(project.id) {
+            configChangedOnDisk.remove(project.id)
+        }
     }
 
     private func load() {
