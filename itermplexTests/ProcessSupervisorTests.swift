@@ -48,4 +48,16 @@ import Foundation
         #expect(!launcher.launches.map(\.command).contains("start"))
         #expect(sup.process(projectId: pid, name: "d")?.state == .running)
     }
+
+    @Test func removeWorkspaceRunsDaemonStopCommand() {
+        let launcher = FakeProcessLauncher()
+        launcher.immediateExit["up"] = 0
+        let sup = ProcessSupervisor(launcher: launcher)
+        let daemon = ProcessConfig(command: "up", kind: .daemon, stop: "down", autoStart: true)
+        sup.apply(config(["d": daemon]), projectId: pid, directory: dir)
+        #expect(sup.process(projectId: pid, name: "d")?.state == .running)
+        sup.removeWorkspace(pid)
+        #expect(launcher.launches.map(\.command).contains("down"))
+        #expect(sup.processes(for: pid).isEmpty)
+    }
 }

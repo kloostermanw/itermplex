@@ -68,7 +68,21 @@ final class ProcessSupervisor {
     }
 
     func removeWorkspace(_ projectId: UUID) {
-        byProject[projectId]?.forEach { $0.kill() }
+        // Tear down both process kinds synchronously before dropping the map
+        // entry. A daemon's start command has already exited (no live
+        // handle), so `stop()` -- which runs its configured `stop` command --
+        // is what actually brings the backing service down; the spawned stop
+        // subprocess runs to completion independently of this ManagedProcess,
+        // so it isn't lost when the map entry is cleared. `kill()` then
+        // SIGKILLs any live handle immediately and synchronously, which is
+        // the effective teardown for a long-running process (a harmless
+        // no-op for a daemon with no live handle). Any escalation `Task`
+        // `stop()` may have started would not survive deallocation, hence
+        // the synchronous `kill()` as a backstop.
+        byProject[projectId]?.forEach {
+            $0.stop()
+            $0.kill()
+        }
         byProject[projectId] = nil
     }
 
