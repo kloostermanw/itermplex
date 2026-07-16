@@ -125,6 +125,30 @@ final class FakeProcessLauncher: @preconcurrency ProcessLaunching, @unchecked Se
         #expect(p.state == .running)
     }
 
+    @Test func daemonRestartBringsDownThenRelaunches() {
+        let launcher = FakeProcessLauncher()
+        launcher.immediateExit["sail up -d"] = 0
+        launcher.immediateExit["sail down"] = 0
+        let p = ManagedProcess(name: "sail", config: ProcessConfig(command: "sail up -d", kind: .daemon, stop: "sail down"), directory: dir, launcher: launcher)
+        p.start()
+        #expect(p.state == .running)
+        p.restart()
+        #expect(launcher.launches.map(\.command).contains("sail down"))
+        #expect(launcher.launches.filter { $0.command == "sail up -d" }.count == 2)
+        #expect(p.state == .running)
+    }
+
+    @Test func daemonRestartWithoutStopCommandJustRelaunches() {
+        let launcher = FakeProcessLauncher()
+        launcher.immediateExit["sail up -d"] = 0
+        let p = ManagedProcess(name: "sail", config: ProcessConfig(command: "sail up -d", kind: .daemon), directory: dir, launcher: launcher)
+        p.start()
+        #expect(p.state == .running)
+        p.restart()
+        #expect(launcher.launches.filter { $0.command == "sail up -d" }.count == 2)
+        #expect(p.state == .running)
+    }
+
     @Test func userStopSuppressesAutoRestart() {
         let launcher = FakeProcessLauncher()
         let p = ManagedProcess(name: "npm", config: ProcessConfig(command: "npm run dev", kind: .longRunning, autoRestart: true), directory: dir, launcher: launcher, graceInterval: .zero)

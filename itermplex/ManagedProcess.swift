@@ -47,13 +47,31 @@ final class ManagedProcess: Identifiable {
 
     func restart() {
         restartCount = 0
-        if isAlive {
+        guard isAlive else {
+            launchMain()
+            return
+        }
+        switch config.kind {
+        case .longRunning, .shortRunning:
             stopRequested = true
             handle?.send(signal: SIGTERM)
             // The relaunch happens once the exit lands (see handleExit).
             pendingRestart = true
-        } else {
-            launchMain()
+        case .daemon:
+            // A running/orphaned daemon's start command has typically already
+            // exited (no handle to signal), so bringing it down means running
+            // its stop command, not signaling a process. Once that stop
+            // command's exit lands, settleStopped() honors pendingRestart and
+            // relaunches. With no stop command there is nothing to bring
+            // down, so just relaunch straight away.
+            if config.stop != nil {
+                pendingRestart = true
+                stopRequested = true
+                state = .stopping
+                performStop()
+            } else {
+                launchMain()
+            }
         }
     }
 
@@ -62,15 +80,7 @@ final class ManagedProcess: Identifiable {
         stopRequested = true
         pendingRestart = false
         state = .stopping
-        if let stopCommand = config.stop {
-            _ = try? launcher.launch(
-                command: stopCommand, directory: directory, environment: config.env,
-                onOutput: { [weak self] in self?.log.append($0) },
-                onExit: { [weak self] _ in self?.settleStopped() }
-            )
-        } else {
-            escalateSignals()
-        }
+        performStop()
     }
 
     func kill() {
@@ -155,6 +165,22 @@ final class ManagedProcess: Identifiable {
         launchMain()
     }
 
+    /// Stop mechanics only: runs the configured stop command, or escalates
+    /// signals against the live handle. Deliberately does not touch
+    /// `pendingRestart` so both `stop()` (which clears it) and `restart()`
+    /// (which sets it) can share this without stepping on each other.
+    private func performStop() {
+        if let stopCommand = config.stop {
+            _ = try? launcher.launch(
+                command: stopCommand, directory: directory, environment: config.env,
+                onOutput: { [weak self] in self?.log.append($0) },
+                onExit: { [weak self] _ in self?.settleStopped() }
+            )
+        } else {
+            escalateSignals()
+        }
+    }
+
     private func escalateSignals() {
         handle?.send(signal: SIGINT)
         escalation = Task { [weak self, graceInterval] in
@@ -172,8 +198,13 @@ final class ManagedProcess: Identifiable {
         escalation?.cancel()
         escalation = nil
         handle = nil
-        state = .idle
         stopRequested = false
+        if pendingRestart {
+            pendingRestart = false
+            launchMain()
+            return
+        }
+        state = .idle
     }
 }
 
