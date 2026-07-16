@@ -95,6 +95,28 @@ final class FakeProcessLauncher: @preconcurrency ProcessLaunching, @unchecked Se
         #expect(p.state == .running)
     }
 
+    @Test func daemonStartFailureBecomesFailed() {
+        let launcher = FakeProcessLauncher()
+        launcher.immediateExit["sail up -d"] = 2
+        let p = ManagedProcess(name: "sail", config: ProcessConfig(command: "sail up -d", kind: .daemon, stop: "sail down"), directory: dir, launcher: launcher)
+        p.start()
+        #expect(p.state == .failed(2))
+    }
+
+    @Test func orphanedDaemonUnaffectedByStatusProbe() {
+        let launcher = FakeProcessLauncher()
+        launcher.immediateExit["sail up -d"] = 0
+        let up = ProcessConfig(command: "sail up -d", kind: .daemon, stop: "sail down", status: "sail ps")
+        let p = ManagedProcess(name: "sail", config: up, directory: dir, launcher: launcher)
+        p.start()
+        #expect(p.state == .running)
+        p.markOrphaned()
+        #expect(p.state == .orphaned)
+        launcher.immediateExit["sail ps"] = 1
+        p.probeStatus()
+        #expect(p.state == .orphaned)
+    }
+
     @Test func daemonStatusProbeSetsRunningOrIdle() {
         let launcher = FakeProcessLauncher()
         let up = ProcessConfig(command: "sail up -d", kind: .daemon, stop: "sail down", status: "sail ps")

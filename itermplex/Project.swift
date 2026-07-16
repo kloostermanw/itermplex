@@ -9,6 +9,7 @@ struct Project: Identifiable, Equatable {
     var claudeSeq: Int
     var collapsed: Bool
     var configName: String?
+    var configProcesses: [String: ProcessConfig]?
 
     /// Display name: the config file's `name` override when present, else the
     /// folder name. `configName` is re-established from the file by
@@ -28,7 +29,8 @@ struct Project: Identifiable, Equatable {
         terminalSeq: Int = 0,
         claudeSeq: Int = 0,
         collapsed: Bool = false,
-        configName: String? = nil
+        configName: String? = nil,
+        configProcesses: [String: ProcessConfig]? = nil
     ) {
         self.id = id
         self.url = url
@@ -38,5 +40,6 @@ struct Project: Identifiable, Equatable {
         self.claudeSeq = claudeSeq
         self.collapsed = collapsed
         self.configName = configName
+        self.configProcesses = configProcesses
     }
 }

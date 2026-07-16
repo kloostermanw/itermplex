@@ -91,11 +91,13 @@ final class ManagedProcess: Identifiable {
 
     /// Daemon-only: runs the `status` probe and sets running/idle by exit code.
     func probeStatus() {
-        // Only block while an actual launch/stop command is in flight; a
-        // steady-state `.running` daemon must still be re-probeable so we can
-        // notice if it went down externally.
+        // Only block while an actual launch/stop command is in flight, or the
+        // daemon is already flagged orphaned (its definition was dropped from
+        // config; a status probe must not flip it back to running/idle and
+        // lose that badge). A steady-state `.running` daemon must still be
+        // re-probeable so we can notice if it went down externally.
         guard config.kind == .daemon, let statusCommand = config.status,
-              state != .starting, state != .stopping else { return }
+              state != .starting, state != .stopping, state != .orphaned else { return }
         _ = try? launcher.launch(
             command: statusCommand, directory: directory, environment: config.env,
             onOutput: { _ in },
@@ -140,8 +142,11 @@ final class ManagedProcess: Identifiable {
         switch config.kind {
         case .daemon:
             // The start command finishing means the daemon is up (unless we asked to stop).
+            // A nonzero exit means the start command itself failed, so the daemon
+            // never came up.
             if stopRequested { settleStopped() }
-            else { state = .running }
+            else if code == 0 { state = .running }
+            else { state = .failed(code) }
         case .longRunning, .shortRunning:
             if pendingRestart {
                 pendingRestart = false
