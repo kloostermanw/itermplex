@@ -3,6 +3,7 @@ import AppKit
 
 struct ContentView: View {
     let store: ProjectStore
+    @Environment(\.openWindow) private var openWindow
     @State private var monitor: SessionMonitoring = ITermMonitor()
     @State private var mcpHost: MCPServerHost?
     @State private var isBusy = false
@@ -35,7 +36,13 @@ struct ContentView: View {
                         onRemoveProject: { store.remove(project) },
                         onToggleCollapsed: { store.toggleCollapsed(project) },
                         onEnableSync: { store.enableConfigSync(for: project) },
-                        onApplyConfig: { store.applyConfigChanges(for: project) }
+                        onApplyConfig: { store.applyConfigChanges(for: project) },
+                        processes: store.processes.processes(for: project.id),
+                        onProcessStart: { $0.start() },
+                        onProcessStop: { $0.stop() },
+                        onProcessRestart: { $0.restart() },
+                        onProcessKill: { $0.kill() },
+                        onOpenProcessLog: { openProcessLog($0, in: project) }
                     )
                     .draggable(project.id.uuidString)
                     .dropDestination(for: String.self) { items, _ in
@@ -151,5 +158,9 @@ struct ContentView: View {
     private func startRename(_ ref: TerminalRef, in project: Project) {
         renameText = ref.label
         renameTarget = (project, ref)
+    }
+
+    private func openProcessLog(_ process: ManagedProcess, in project: Project) {
+        openWindow(id: "process-log", value: ProcessLogWindowID(projectId: project.id, name: process.name))
     }
 }
