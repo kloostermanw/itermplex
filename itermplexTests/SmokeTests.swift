@@ -52,7 +52,13 @@ import Testing
             onRemoveProject: {},
             onToggleCollapsed: {},
             onEnableSync: {},
-            onApplyConfig: {}
+            onApplyConfig: {},
+            processes: [],
+            onProcessStart: { _ in },
+            onProcessStop: { _ in },
+            onProcessRestart: { _ in },
+            onProcessKill: { _ in },
+            onOpenProcessLog: { _ in }
         )
         .frame(width: 320)
 

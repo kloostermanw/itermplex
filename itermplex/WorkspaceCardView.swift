@@ -19,6 +19,12 @@ struct WorkspaceCardView: View {
     let onToggleCollapsed: () -> Void
     let onEnableSync: () -> Void
     let onApplyConfig: () -> Void
+    let processes: [ManagedProcess]
+    let onProcessStart: (ManagedProcess) -> Void
+    let onProcessStop: (ManagedProcess) -> Void
+    let onProcessRestart: (ManagedProcess) -> Void
+    let onProcessKill: (ManagedProcess) -> Void
+    let onOpenProcessLog: (ManagedProcess) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -103,6 +109,18 @@ struct WorkspaceCardView: View {
                 .padding(.leading, 7)
                 .padding(.trailing, 12)
             VStack(alignment: .leading, spacing: 2) {
+                if !processes.isEmpty {
+                    ForEach(processes) { process in
+                        ProcessRowView(
+                            process: process,
+                            onStart: { onProcessStart(process) },
+                            onStop: { onProcessStop(process) },
+                            onRestart: { onProcessRestart(process) },
+                            onKill: { onProcessKill(process) },
+                            onOpenLog: { onOpenProcessLog(process) }
+                        )
+                    }
+                }
                 ForEach(project.terminals) { ref in
                     TerminalRowView(
                         label: ref.label,
