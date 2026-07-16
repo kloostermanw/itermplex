@@ -166,4 +166,32 @@ import Foundation
         #expect(store.isSyncEnabled(store.projects[0]) == false)
         #expect(store.configChangedOnDisk.contains(id) == false)
     }
+
+    @Test func workspaceCardAcceptsSyncParameters() async {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "s1", windowId: "w1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        store.addProject(url: tempFolder())
+        let project = store.projects[0]
+        _ = WorkspaceCardView(
+            project: project,
+            collapsed: false,
+            gitInfo: nil,
+            runState: { store.runState(for: $0) },
+            needsAttention: { store.attention.contains($0.id) },
+            syncEnabled: store.isSyncEnabled(project),
+            configChanged: store.configChangedOnDisk.contains(project.id),
+            isLocalOnly: { store.localOnlyTerminals.contains($0.id) },
+            onActivate: { _ in },
+            onRenameTerminal: { _ in },
+            onRemoveTerminal: { _ in },
+            onCloseTerminal: { _ in },
+            onOpenTerminal: {},
+            onOpenClaude: {},
+            onRemoveProject: {},
+            onToggleCollapsed: {},
+            onEnableSync: {},
+            onApplyConfig: {}
+        )
+    }
 }

@@ -16,14 +16,13 @@ default branch (`origin/develop`), the upstream row against the branch upstream
 
 ```
 ┌───────────────────────────────────────────────────────────────────┐
-│ ▾ laravel-test                       origin/develop           ↑1 ↓0 │
+│ ▾ laravel-test                  ⟳   origin/develop            ↑1 ↓0 │
 │                                      origin/feature/issue-15   ↑1 ↓0 │
 │   (Issue #15)  (PR #16)                                             │
 │   1 failing, 1 successfull checks                                   │
 │   │  > Terminal 1                                                   │
 │   │  ✦ Claude Code (Python")                                        │
-│   │  > Terminal 2                                                   │
-│   │  ✦ Claude Code (Python")                                        │
+│   │  ✦ old-agent                                     (local)        │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
@@ -37,6 +36,15 @@ Legend:
   `ChecksSummary.summaryText`.
 - `│`: the leading rule that groups the terminal rows (`WorkspaceCardView.children`).
 - `>`: terminal row glyph. `✦`: Claude row glyph (`TerminalRowView`).
+- `⟳`: appears only when `itermplex.json` changed on disk. Clicking it applies
+  the file to the rows (`WorkspaceCardView.header`, `onApplyConfig`).
+- `(local)`: a row tracked locally but absent from `itermplex.json`, kept alive
+  after an external removal (`TerminalRowView`, `isLocalOnly`).
+
+The change indicator and the enable action only appear for workspaces that have,
+or can have, an `itermplex.json`. "Enable config sync" lives in the header's
+context menu, shown only while sync is off, and writes the file from the
+workspace's current rows.
 
 ## Collapsed card
 

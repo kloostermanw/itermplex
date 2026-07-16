@@ -6,6 +6,9 @@ struct WorkspaceCardView: View {
     let gitInfo: GitInfo?
     let runState: (TerminalRef) -> ClaudeRunState
     let needsAttention: (TerminalRef) -> Bool
+    let syncEnabled: Bool
+    let configChanged: Bool
+    let isLocalOnly: (TerminalRef) -> Bool
     let onActivate: (TerminalRef) -> Void
     let onRenameTerminal: (TerminalRef) -> Void
     let onRemoveTerminal: (TerminalRef) -> Void
@@ -14,6 +17,8 @@ struct WorkspaceCardView: View {
     let onOpenClaude: () -> Void
     let onRemoveProject: () -> Void
     let onToggleCollapsed: () -> Void
+    let onEnableSync: () -> Void
+    let onApplyConfig: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -50,6 +55,14 @@ struct WorkspaceCardView: View {
                 .font(.title3)
                 .lineLimit(1)
                 .truncationMode(.middle)
+            if configChanged {
+                Button(action: onApplyConfig) {
+                    Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                        .foregroundStyle(.orange)
+                        .help("itermplex.json changed on disk. Click to apply.")
+                }
+                .buttonStyle(.plain)
+            }
             Spacer(minLength: 8)
             if !collapsed {
                 VStack(alignment: .trailing, spacing: 2) {
@@ -75,6 +88,9 @@ struct WorkspaceCardView: View {
         .contextMenu {
             Button("Terminal", action: onOpenTerminal)
             Button("Claude", action: onOpenClaude)
+            if !syncEnabled {
+                Button("Enable config sync", action: onEnableSync)
+            }
             Button("Remove", action: onRemoveProject)
         }
     }
@@ -92,7 +108,8 @@ struct WorkspaceCardView: View {
                         label: ref.label,
                         kind: ref.kind,
                         isExited: ref.kind == .claude && runState(ref) == .exited,
-                        needsAttention: needsAttention(ref)
+                        needsAttention: needsAttention(ref),
+                        isLocalOnly: isLocalOnly(ref)
                     )
                     .onTapGesture { onActivate(ref) }
                     .contextMenu {

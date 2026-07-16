@@ -23,6 +23,9 @@ struct ContentView: View {
                         gitInfo: store.gitInfo[project.id],
                         runState: { store.runState(for: $0) },
                         needsAttention: { store.attention.contains($0.id) },
+                        syncEnabled: store.isSyncEnabled(project),
+                        configChanged: store.configChangedOnDisk.contains(project.id),
+                        isLocalOnly: { store.localOnlyTerminals.contains($0.id) },
                         onActivate: { activate($0, in: project) },
                         onRenameTerminal: { startRename($0, in: project) },
                         onRemoveTerminal: { store.removeTerminal($0, in: project) },
@@ -30,7 +33,9 @@ struct ContentView: View {
                         onOpenTerminal: { openTerminal(for: project) },
                         onOpenClaude: { openClaude(for: project) },
                         onRemoveProject: { store.remove(project) },
-                        onToggleCollapsed: { store.toggleCollapsed(project) }
+                        onToggleCollapsed: { store.toggleCollapsed(project) },
+                        onEnableSync: { store.enableConfigSync(for: project) },
+                        onApplyConfig: { store.applyConfigChanges(for: project) }
                     )
                     .draggable(project.id.uuidString)
                     .dropDestination(for: String.self) { items, _ in
