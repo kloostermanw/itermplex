@@ -6,6 +6,8 @@ import Foundation
     @Test func decodesAllFields() throws {
         let json = Data("""
         {
+          "agents": [],
+          "iterm": [],
           "processes": {
             "sail": {
               "command": "cd src && sail up -d",
@@ -34,7 +36,7 @@ import Foundation
 
     @Test func appliesDefaults() throws {
         let json = Data("""
-        { "processes": { "npm": { "command": "npm run dev" } } }
+        { "agents": [], "iterm": [], "processes": { "npm": { "command": "npm run dev" } } }
         """.utf8)
         let npm = try #require(try ItermplexConfig.parse(json).processes?["npm"])
         #expect(npm.kind == .longRunning)
