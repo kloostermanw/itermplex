@@ -2,9 +2,13 @@ import SwiftUI
 
 struct WorkspaceCardView: View {
     let project: Project
+    let collapsed: Bool
     let gitInfo: GitInfo?
     let runState: (TerminalRef) -> ClaudeRunState
     let needsAttention: (TerminalRef) -> Bool
+    let syncEnabled: Bool
+    let configChanged: Bool
+    let isLocalOnly: (TerminalRef) -> Bool
     let onActivate: (TerminalRef) -> Void
     let onRenameTerminal: (TerminalRef) -> Void
     let onRemoveTerminal: (TerminalRef) -> Void
@@ -12,52 +16,81 @@ struct WorkspaceCardView: View {
     let onOpenTerminal: () -> Void
     let onOpenClaude: () -> Void
     let onRemoveProject: () -> Void
+    let onToggleCollapsed: () -> Void
+    let onEnableSync: () -> Void
+    let onApplyConfig: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             header
-            if let gitInfo, gitInfo.issueNumber != nil || gitInfo.prNumber != nil {
-                IssuePRLineView(
-                    issueNumber: gitInfo.issueNumber,
-                    issueURL: gitInfo.issueURL,
-                    prNumber: gitInfo.prNumber,
-                    prURL: gitInfo.prURL
-                )
-                .padding(.leading, 24)
-            }
-            if let checks = gitInfo?.checks {
-                ChecksLineView(summary: checks)
+            if !collapsed {
+                if let gitInfo, gitInfo.issueNumber != nil || gitInfo.prNumber != nil {
+                    IssuePRLineView(
+                        issueNumber: gitInfo.issueNumber,
+                        issueURL: gitInfo.issueURL,
+                        prNumber: gitInfo.prNumber,
+                        prURL: gitInfo.prURL
+                    )
                     .padding(.leading, 24)
+                }
+                if let checks = gitInfo?.checks {
+                    ChecksLineView(summary: checks)
+                        .padding(.leading, 24)
+                }
+                children
             }
-            children
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .contentShape(Rectangle())
+        .animation(.default, value: collapsed)
     }
 
     private var header: some View {
         HStack(spacing: 6) {
-            Image(systemName: "chevron.right")
+            Image(systemName: collapsed ? "chevron.right" : "chevron.down")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text(project.name)
                 .font(.title3)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Spacer(minLength: 8)
-            HStack(spacing: 16) {
-                if let gitInfo, gitInfo.hasBase {
-                    AheadBehindView(behind: gitInfo.baseBehind, ahead: gitInfo.baseAhead)
+            if configChanged {
+                Button(action: onApplyConfig) {
+                    Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                        .foregroundStyle(.orange)
+                        .help("itermplex.json changed on disk. Click to apply.")
                 }
-                if let gitInfo, gitInfo.hasUpstream {
-                    AheadBehindView(behind: gitInfo.behind, ahead: gitInfo.ahead)
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 8)
+            if !collapsed {
+                VStack(alignment: .trailing, spacing: 2) {
+                    if let gitInfo, gitInfo.hasBase {
+                        AheadBehindView(
+                            label: gitInfo.baseRef ?? "base",
+                            behind: gitInfo.baseBehind,
+                            ahead: gitInfo.baseAhead
+                        )
+                    }
+                    if let gitInfo, gitInfo.hasUpstream {
+                        AheadBehindView(
+                            label: gitInfo.upstreamRef ?? "origin/\(gitInfo.branch)",
+                            behind: gitInfo.behind,
+                            ahead: gitInfo.ahead
+                        )
+                    }
                 }
             }
         }
+        .contentShape(Rectangle())
+        .onTapGesture { onToggleCollapsed() }
         .contextMenu {
             Button("Terminal", action: onOpenTerminal)
             Button("Claude", action: onOpenClaude)
+            if !syncEnabled {
+                Button("Enable config sync", action: onEnableSync)
+            }
             Button("Remove", action: onRemoveProject)
         }
     }
@@ -75,7 +108,8 @@ struct WorkspaceCardView: View {
                         label: ref.label,
                         kind: ref.kind,
                         isExited: ref.kind == .claude && runState(ref) == .exited,
-                        needsAttention: needsAttention(ref)
+                        needsAttention: needsAttention(ref),
+                        isLocalOnly: isLocalOnly(ref)
                     )
                     .onTapGesture { onActivate(ref) }
                     .contextMenu {

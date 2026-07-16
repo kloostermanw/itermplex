@@ -17,6 +17,9 @@ xcodebuild -scheme itermplex -destination 'platform=macOS' build
 xcodebuild -scheme itermplex -destination 'platform=macOS' test
 ```
 
+## Documentation
+The `documentation/` folder must stay in sync with the code it describes. Whenever you change something a document covers, update that document in the same change. For example, `documentation/AsciiScreens/` holds one ASCII layout per SwiftUI view (`WorkspaceCardView.md`, `SidebarHeaderView.md`, and so on), so editing a view means updating its matching file (and adding a new file when you add a view worth documenting).
+
 ## General
 Do not tell me I am right all the time. Be critical. We're equals. Try to be neutral and objective.
 Do not excessively use emojis.

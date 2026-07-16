@@ -13,23 +13,29 @@ struct ContentView: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 SidebarHeaderView(
-                    count: store.projects.count,
                     onRefresh: { Task { await store.refreshAllGitInfo() } },
                     onAdd: addProject
                 )
                 ForEach(store.projects) { project in
                     WorkspaceCardView(
                         project: project,
+                        collapsed: project.collapsed,
                         gitInfo: store.gitInfo[project.id],
                         runState: { store.runState(for: $0) },
                         needsAttention: { store.attention.contains($0.id) },
+                        syncEnabled: store.isSyncEnabled(project),
+                        configChanged: store.configChangedOnDisk.contains(project.id),
+                        isLocalOnly: { store.localOnlyTerminals.contains($0.id) },
                         onActivate: { activate($0, in: project) },
                         onRenameTerminal: { startRename($0, in: project) },
                         onRemoveTerminal: { store.removeTerminal($0, in: project) },
                         onCloseTerminal: { closeTerminal($0, in: project) },
                         onOpenTerminal: { openTerminal(for: project) },
                         onOpenClaude: { openClaude(for: project) },
-                        onRemoveProject: { store.remove(project) }
+                        onRemoveProject: { store.remove(project) },
+                        onToggleCollapsed: { store.toggleCollapsed(project) },
+                        onEnableSync: { store.enableConfigSync(for: project) },
+                        onApplyConfig: { store.applyConfigChanges(for: project) }
                     )
                     .draggable(project.id.uuidString)
                     .dropDestination(for: String.self) { items, _ in

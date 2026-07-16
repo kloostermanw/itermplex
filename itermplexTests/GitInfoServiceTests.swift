@@ -62,6 +62,9 @@ struct FakeCommandRunner: CommandRunning {
     @Test func assemblesBaseAheadBehindAndChecks() async {
         let svc = service { _, args in
             if args.contains("--is-inside-work-tree") { return CommandResult(stdout: "true\n", stderr: "", status: 0) }
+            if args.contains(where: { $0.contains("@{upstream}") }) && args.contains("--abbrev-ref") {
+                return CommandResult(stdout: "origin/feature/issue-333\n", stderr: "", status: 0)
+            }
             if args.contains("--abbrev-ref") { return CommandResult(stdout: "feature/issue-333\n", stderr: "", status: 0) }
             if args.contains("symbolic-ref") { return CommandResult(stdout: "origin/develop\n", stderr: "", status: 0) }
             if args.contains(where: { $0.contains("@{upstream}") }) { return CommandResult(stdout: "1\t2\n", stderr: "", status: 0) }
@@ -75,6 +78,8 @@ struct FakeCommandRunner: CommandRunning {
         }
         let info = await svc.info(for: URL(fileURLWithPath: "/tmp/x"))
         #expect(info?.hasBase == true)
+        #expect(info?.baseRef == "origin/develop")
+        #expect(info?.upstreamRef == "origin/feature/issue-333")
         #expect(info?.baseBehind == 4)
         #expect(info?.baseAhead == 7)
         #expect(info?.behind == 1)

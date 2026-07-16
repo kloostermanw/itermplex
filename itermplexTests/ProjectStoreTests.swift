@@ -144,4 +144,39 @@ import Foundation
         store.moveToEnd(id: UUID())
         #expect(store.projects.map(\.name) == ["a", "b"])
     }
+
+    @Test func toggleCollapsedFlipsFlag() {
+        let store = ProjectStore(defaults: makeDefaults())
+        store.addProject(url: makeTempFolder(named: "proj"))
+        #expect(store.projects[0].collapsed == false)
+        store.toggleCollapsed(store.projects[0])
+        #expect(store.projects[0].collapsed == true)
+        store.toggleCollapsed(store.projects[0])
+        #expect(store.projects[0].collapsed == false)
+    }
+
+    @Test func collapsedStatePersistsAcrossStoreInstances() {
+        let defaults = makeDefaults()
+        let store1 = ProjectStore(defaults: defaults)
+        store1.addProject(url: makeTempFolder(named: "proj"))
+        store1.toggleCollapsed(store1.projects[0])
+        let store2 = ProjectStore(defaults: defaults)
+        #expect(store2.projects.first?.collapsed == true)
+    }
+
+    @Test func newProjectDefaultsToExpandedAfterReload() {
+        let defaults = makeDefaults()
+        let store1 = ProjectStore(defaults: defaults)
+        store1.addProject(url: makeTempFolder(named: "proj"))
+        let store2 = ProjectStore(defaults: defaults)
+        #expect(store2.projects.first?.collapsed == false)
+    }
+
+    @Test func toggleCollapsedUnknownProjectIsNoOp() {
+        let store = ProjectStore(defaults: makeDefaults())
+        store.addProject(url: makeTempFolder(named: "proj"))
+        let ghost = Project(url: makeTempFolder(named: "ghost"))
+        store.toggleCollapsed(ghost)
+        #expect(store.projects[0].collapsed == false)
+    }
 }

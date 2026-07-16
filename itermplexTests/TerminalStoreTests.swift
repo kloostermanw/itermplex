@@ -379,6 +379,7 @@ final class FakeTerminalService: TerminalService, @unchecked Sendable {
         #expect(store.projects[0].terminals[0].kind == .terminal)
         #expect(store.projects[0].terminalSeq == 1)
         #expect(store.projects[0].claudeSeq == 0)
+        #expect(store.projects[0].collapsed == false)
     }
 
     @Test func titleEventUpdatesClaudeLabel() async {

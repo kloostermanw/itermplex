@@ -5,6 +5,7 @@ struct TerminalRowView: View {
     let kind: TerminalKind
     var isExited: Bool = false
     var needsAttention: Bool = false
+    var isLocalOnly: Bool = false
 
     private var iconName: String {
         kind == .claude ? "sparkle" : "terminal"
@@ -19,6 +20,14 @@ struct TerminalRowView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .foregroundStyle(isExited ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+            if isLocalOnly {
+                Text("local")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(.secondary.opacity(0.15), in: Capsule())
+            }
             if needsAttention {
                 Spacer(minLength: 4)
                 Text("🔔")

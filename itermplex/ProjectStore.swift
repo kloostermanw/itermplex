@@ -30,6 +30,20 @@ final class ProjectStore {
     private(set) var attention: Set<UUID> = []
     private(set) var jobNames: [UUID: String] = [:]
 
+    /// Terminal ids that are tracked locally but absent from the on-disk config
+    /// (kept alive after an external removal). Cleared when the config is written.
+    private(set) var localOnlyTerminals: Set<UUID> = []
+
+    /// The exact bytes last read from or written to each workspace's config file,
+    /// used to ignore the app's own writes when the watcher fires.
+    private var lastConfigData: [UUID: Data] = [:]
+
+    /// Workspaces whose on-disk config differs from what the app last saw; drives
+    /// the "config changed" affordance on the card.
+    private(set) var configChangedOnDisk: Set<UUID> = []
+
+    private var watchers: [UUID: ConfigWatcher] = [:]
+
     /// Foreground job names that mean "no agent running, just a shell".
     /// Confirmed/extended by the design spike (Task 0).
     static let shellJobNames: Set<String> = [
@@ -65,18 +79,20 @@ final class ProjectStore {
         var terminalSeq: Int
         var claudeSeq: Int
         var windowId: String?
+        var collapsed: Bool
 
-        init(id: UUID, bookmark: Data, terminals: [TerminalRef], terminalSeq: Int, claudeSeq: Int, windowId: String?) {
+        init(id: UUID, bookmark: Data, terminals: [TerminalRef], terminalSeq: Int, claudeSeq: Int, windowId: String?, collapsed: Bool) {
             self.id = id
             self.bookmark = bookmark
             self.terminals = terminals
             self.terminalSeq = terminalSeq
             self.claudeSeq = claudeSeq
             self.windowId = windowId
+            self.collapsed = collapsed
         }
 
         private enum CodingKeys: String, CodingKey {
-            case id, bookmark, terminals, terminalSeq, claudeSeq, windowId
+            case id, bookmark, terminals, terminalSeq, claudeSeq, windowId, collapsed
         }
 
         init(from decoder: Decoder) throws {
@@ -89,6 +105,7 @@ final class ProjectStore {
             terminalSeq = try container.decode(Int.self, forKey: .terminalSeq)
             claudeSeq = try container.decodeIfPresent(Int.self, forKey: .claudeSeq) ?? 0
             windowId = try container.decodeIfPresent(String.self, forKey: .windowId)
+            collapsed = try container.decodeIfPresent(Bool.self, forKey: .collapsed) ?? false
         }
     }
 
@@ -114,6 +131,10 @@ final class ProjectStore {
         )) != nil else { return }
         projects.append(Project(url: standardized))
         save()
+        if let added = projects.last, ConfigFile.exists(in: added.url) {
+            reconcileWithFile(added.id)
+            startWatching(added)
+        }
     }
 
     func remove(_ project: Project) {
@@ -124,6 +145,9 @@ final class ProjectStore {
             attention.remove(id)
             jobNames[id] = nil
         }
+        stopWatching(project.id)
+        lastConfigData[project.id] = nil
+        configChangedOnDisk.remove(project.id)
         save()
     }
 
@@ -203,6 +227,7 @@ final class ProjectStore {
         let ref = TerminalRef(label: label, sessionId: handle.sessionId, kind: kind)
         projects[index].terminals.append(ref)
         save()
+        emitConfig(for: projects[index].id)
         return ref
     }
 
@@ -233,7 +258,9 @@ final class ProjectStore {
         projects[np].terminals.removeAll { $0.id == refId }
         attention.remove(refId)
         jobNames[refId] = nil
+        localOnlyTerminals.remove(refId)
         save()
+        emitConfig(for: projects[np].id)
     }
 
     func activate(_ ref: TerminalRef, in project: Project) async {
@@ -322,7 +349,11 @@ final class ProjectStore {
         guard let pIndex = projects.firstIndex(where: { $0.id == project.id }),
               let tIndex = projects[pIndex].terminals.firstIndex(where: { $0.id == ref.id }) else { return }
         projects[pIndex].terminals[tIndex].label = label
+        if projects[pIndex].terminals[tIndex].kind == .terminal {
+            projects[pIndex].terminals[tIndex].slot = label
+        }
         save()
+        emitConfig(for: projects[pIndex].id)
     }
 
     func removeTerminal(_ ref: TerminalRef, in project: Project) {
@@ -330,6 +361,14 @@ final class ProjectStore {
         projects[pIndex].terminals.removeAll { $0.id == ref.id }
         attention.remove(ref.id)
         jobNames[ref.id] = nil
+        localOnlyTerminals.remove(ref.id)
+        save()
+        emitConfig(for: project.id)
+    }
+
+    func toggleCollapsed(_ project: Project) {
+        guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
+        projects[index].collapsed.toggle()
         save()
     }
 
@@ -341,7 +380,9 @@ final class ProjectStore {
             try await service.close(sessionId: sessionId)
             guard let pIndex = projects.firstIndex(where: { $0.id == project.id }) else { return }
             projects[pIndex].terminals.removeAll { $0.id == ref.id }
+            localOnlyTerminals.remove(ref.id)
             save()
+            emitConfig(for: project.id)
         } catch {
             lastError = (error as? TerminalError)?.errorDescription ?? error.localizedDescription
         }
@@ -443,6 +484,107 @@ final class ProjectStore {
         }
     }
 
+    // MARK: - Config sync
+
+    func isSyncEnabled(_ project: Project) -> Bool {
+        ConfigFile.exists(in: project.url)
+    }
+
+    /// Writes the workspace's current rows to a new `itermplex.json`, turning
+    /// sync on. Records the written bytes so the watcher ignores this write.
+    func enableConfigSync(for project: Project) {
+        guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
+        let config = ConfigReconcile.config(from: projects[index].terminals, name: projects[index].configName)
+        do {
+            lastConfigData[project.id] = try ConfigFile.write(config, in: projects[index].url)
+            startWatching(projects[index])
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    /// Rewrites the config file to mirror the workspace's current rows, but only
+    /// when sync is on and the content actually changed. Clears local-only marks
+    /// for the rewritten rows (they are now present in the file again).
+    private func emitConfig(for projectId: UUID) {
+        guard let index = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        let project = projects[index]
+        guard ConfigFile.exists(in: project.url) else { return }
+        let config = ConfigReconcile.config(from: project.terminals, name: project.configName)
+        guard let data = try? config.encoded() else { return }
+        if lastConfigData[projectId] == data { return }
+        do {
+            lastConfigData[projectId] = try ConfigFile.write(config, in: project.url)
+            localOnlyTerminals.subtract(project.terminals.map(\.id))
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    /// Reads the workspace config and applies it to the current rows, preserving
+    /// live sessions and keeping running rows dropped by the file as local-only.
+    /// No-op when the file is absent (sync off).
+    @discardableResult
+    func reconcileWithFile(_ projectId: UUID) -> Bool {
+        guard let index = projects.firstIndex(where: { $0.id == projectId }) else { return false }
+        let url = projects[index].url
+        let config: ItermplexConfig?
+        do {
+            config = try ConfigFile.read(in: url)
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+        guard let config else { return false }
+        let result = ConfigReconcile.apply(config, to: projects[index].terminals)
+        projects[index].terminals = result.terminals
+        projects[index].configName = config.name
+        localOnlyTerminals.formUnion(result.localOnly)
+        lastConfigData[projectId] = ConfigFile.rawData(in: url)
+        save()
+        return true
+    }
+
+    private func startWatching(_ project: Project) {
+        guard watchers[project.id] == nil, ConfigFile.exists(in: project.url) else { return }
+        let id = project.id
+        let watcher = ConfigWatcher(folder: project.url) { [weak self] in
+            self?.configFileDidChange(id)
+        }
+        watchers[id] = watcher
+        watcher.start()
+    }
+
+    private func stopWatching(_ projectId: UUID) {
+        watchers[projectId]?.stop()
+        watchers[projectId] = nil
+    }
+
+    /// Watcher callback. If the file was deleted, forgets the last-seen bytes
+    /// and clears the signal, but leaves the folder watcher armed so a later
+    /// external re-create is still detected; otherwise raises the change
+    /// signal when the on-disk bytes differ from what we last saw.
+    func configFileDidChange(_ projectId: UUID) {
+        guard let index = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        let url = projects[index].url
+        guard ConfigFile.exists(in: url) else {
+            lastConfigData[projectId] = nil
+            configChangedOnDisk.remove(projectId)
+            return
+        }
+        if ConfigFile.rawData(in: url) != lastConfigData[projectId] {
+            configChangedOnDisk.insert(projectId)
+        }
+    }
+
+    /// User applied a detected change: reconcile rows from the file and clear the
+    /// signal.
+    func applyConfigChanges(for project: Project) {
+        if reconcileWithFile(project.id) {
+            configChangedOnDisk.remove(project.id)
+        }
+    }
+
     private func load() {
         guard let dataArray = defaults.array(forKey: storageKey) as? [Data] else { return }
         let decoder = JSONDecoder()
@@ -460,10 +602,15 @@ final class ProjectStore {
                 terminals: record.terminals,
                 windowId: record.windowId,
                 terminalSeq: record.terminalSeq,
-                claudeSeq: record.claudeSeq
+                claudeSeq: record.claudeSeq,
+                collapsed: record.collapsed
             ))
         }
         projects = loaded
+        for project in projects where ConfigFile.exists(in: project.url) {
+            reconcileWithFile(project.id)
+            startWatching(project)
+        }
     }
 
     private func save() {
@@ -478,7 +625,8 @@ final class ProjectStore {
                 terminals: project.terminals,
                 terminalSeq: project.terminalSeq,
                 claudeSeq: project.claudeSeq,
-                windowId: project.windowId
+                windowId: project.windowId,
+                collapsed: project.collapsed
             )
             return try? encoder.encode(record)
         }
