@@ -167,6 +167,62 @@ import Foundation
         #expect(store.configChangedOnDisk.contains(id) == false)
     }
 
+    @Test func configNameOverridesFolderName() throws {
+        let store = ProjectStore(defaults: makeDefaults(), service: FakeTerminalService())
+        let folder = tempFolder()
+        try ConfigFile.write(
+            ItermplexConfig(name: "laravel-test", agents: [], iterm: []),
+            in: folder
+        )
+        store.addProject(url: folder)
+        #expect(store.projects[0].name == "laravel-test")
+    }
+
+    @Test func noConfigNameUsesFolderName() throws {
+        let store = ProjectStore(defaults: makeDefaults(), service: FakeTerminalService())
+        let folder = tempFolder()
+        try ConfigFile.write(
+            ItermplexConfig(name: nil, agents: [], iterm: []),
+            in: folder
+        )
+        store.addProject(url: folder)
+        #expect(store.projects[0].name == folder.lastPathComponent)
+    }
+
+    @Test func committedNameSurvivesStructuralChange() async throws {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "s1", windowId: "w1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        let folder = tempFolder()
+        try ConfigFile.write(
+            ItermplexConfig(name: "keep-me", agents: [], iterm: ["Terminal 1"]),
+            in: folder
+        )
+        store.addProject(url: folder)
+
+        await store.openTerminal(for: store.projects[0])
+
+        let config = try ConfigFile.read(in: folder)
+        #expect(config?.name == "keep-me")
+    }
+
+    @Test func enableThenReconcileRoundTripsName() async throws {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "s1", windowId: "w1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        let folder = tempFolder()
+        try ConfigFile.write(
+            ItermplexConfig(name: "round-trip", agents: [], iterm: []),
+            in: folder
+        )
+        store.addProject(url: folder)
+
+        await store.openTerminal(for: store.projects[0])
+        let config = try ConfigFile.read(in: folder)
+        #expect(config?.name == "round-trip")
+        #expect(store.projects[0].name == "round-trip")
+    }
+
     @Test func workspaceCardAcceptsSyncParameters() async {
         let fake = FakeTerminalService()
         fake.handles = [TerminalHandle(sessionId: "s1", windowId: "w1")]

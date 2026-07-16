@@ -8,8 +8,12 @@ struct Project: Identifiable, Equatable {
     var terminalSeq: Int
     var claudeSeq: Int
     var collapsed: Bool
+    var configName: String?
 
-    var name: String { url.lastPathComponent }
+    /// Display name: the config file's `name` override when present, else the
+    /// folder name. `configName` is re-established from the file by
+    /// `reconcileWithFile` on every launch; it is not persisted directly.
+    var name: String { configName ?? url.lastPathComponent }
 
     /// True when the folder is a git repository (has a `.git` directory or file).
     var isGitRepository: Bool {
@@ -23,7 +27,8 @@ struct Project: Identifiable, Equatable {
         windowId: String? = nil,
         terminalSeq: Int = 0,
         claudeSeq: Int = 0,
-        collapsed: Bool = false
+        collapsed: Bool = false,
+        configName: String? = nil
     ) {
         self.id = id
         self.url = url
@@ -32,5 +37,6 @@ struct Project: Identifiable, Equatable {
         self.terminalSeq = terminalSeq
         self.claudeSeq = claudeSeq
         self.collapsed = collapsed
+        self.configName = configName
     }
 }
