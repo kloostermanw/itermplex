@@ -9,14 +9,16 @@ enum ConfigReconcile {
 
     /// Builds a config that mirrors the given rows. Claude rows become agents
     /// (keyed by slot), terminal rows become iterm labels, both in row order.
-    static func config(from terminals: [TerminalRef], name: String?) -> ItermplexConfig {
+    static func config(
+        from terminals: [TerminalRef], name: String?, processes: [String: ProcessConfig]? = nil
+    ) -> ItermplexConfig {
         let agents = terminals
             .filter { $0.kind == .claude }
             .map { ItermplexConfig.Agent(slot: $0.slot, type: "claude") }
         let iterm = terminals
             .filter { $0.kind == .terminal }
             .map(\.slot)
-        return ItermplexConfig(name: name, agents: agents, iterm: iterm)
+        return ItermplexConfig(name: name, agents: agents, iterm: iterm, processes: processes)
     }
 
     /// Reconciles existing rows against a desired config. Matching rows (by kind

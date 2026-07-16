@@ -499,7 +499,11 @@ final class ProjectStore {
     /// sync on. Records the written bytes so the watcher ignores this write.
     func enableConfigSync(for project: Project) {
         guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
-        let config = ConfigReconcile.config(from: projects[index].terminals, name: projects[index].configName)
+        let config = ConfigReconcile.config(
+            from: projects[index].terminals,
+            name: projects[index].configName,
+            processes: projects[index].configProcesses
+        )
         do {
             lastConfigData[project.id] = try ConfigFile.write(config, in: projects[index].url)
             startWatching(projects[index])
@@ -515,7 +519,9 @@ final class ProjectStore {
         guard let index = projects.firstIndex(where: { $0.id == projectId }) else { return }
         let project = projects[index]
         guard ConfigFile.exists(in: project.url) else { return }
-        let config = ConfigReconcile.config(from: project.terminals, name: project.configName)
+        let config = ConfigReconcile.config(
+            from: project.terminals, name: project.configName, processes: project.configProcesses
+        )
         guard let data = try? config.encoded() else { return }
         if lastConfigData[projectId] == data { return }
         do {
@@ -544,6 +550,7 @@ final class ProjectStore {
         let result = ConfigReconcile.apply(config, to: projects[index].terminals)
         projects[index].terminals = result.terminals
         projects[index].configName = config.name
+        projects[index].configProcesses = config.processes
         processes.apply(config, projectId: projectId, directory: url)
         localOnlyTerminals.formUnion(result.localOnly)
         lastConfigData[projectId] = ConfigFile.rawData(in: url)
