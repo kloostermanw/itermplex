@@ -180,3 +180,35 @@ import Foundation
         #expect(store.projects[0].collapsed == false)
     }
 }
+
+@Suite @MainActor struct ProcessStoreWiringTests {
+    private func makeDefaults() -> UserDefaults {
+        UserDefaults(suiteName: "test.\(UUID().uuidString)")!
+    }
+
+    /// Writes an itermplex.json with one auto-start process into a temp dir and
+    /// returns the folder URL.
+    private func makeWorkspace(_ processes: [String: ProcessConfig]) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let config = ItermplexConfig(name: nil, agents: [], iterm: [], processes: processes)
+        _ = try ConfigFile.write(config, in: dir)
+        return dir
+    }
+
+    @Test func applyingConfigDrivesSupervisor() throws {
+        let launcher = FakeProcessLauncher()
+        let supervisor = ProcessSupervisor(launcher: launcher)
+        let store = ProjectStore(
+            defaults: makeDefaults(),
+            service: FakeTerminalService(),
+            gitProvider: FakeGitInfoProvider(),
+            processSupervisor: supervisor
+        )
+        let dir = try makeWorkspace(["npm": ProcessConfig(command: "npm run dev", autoStart: true)])
+        store.addProject(url: dir)
+        let project = try #require(store.projects.first)
+        store.applyConfigChanges(for: project)
+        #expect(supervisor.process(projectId: project.id, name: "npm") != nil)
+    }
+}

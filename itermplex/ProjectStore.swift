@@ -58,6 +58,7 @@ final class ProjectStore {
     private let defaults: UserDefaults
     private let service: TerminalService
     private let gitProvider: GitInfoProviding
+    let processes: ProcessSupervisor
     private let storageKey = "itermplex.projects.bookmarks"
     private let badgeKey = "itermplex.showWorkspaceBadge"
     private var refreshTask: Task<Void, Never>?
@@ -112,11 +113,13 @@ final class ProjectStore {
     init(
         defaults: UserDefaults = .standard,
         service: TerminalService = ITermBridge(),
-        gitProvider: GitInfoProviding = GitInfoService()
+        gitProvider: GitInfoProviding = GitInfoService(),
+        processSupervisor: ProcessSupervisor = ProcessSupervisor()
     ) {
         self.defaults = defaults
         self.service = service
         self.gitProvider = gitProvider
+        self.processes = processSupervisor
         self.showWorkspaceBadge = defaults.bool(forKey: badgeKey)
         load()
     }
@@ -146,6 +149,7 @@ final class ProjectStore {
             jobNames[id] = nil
         }
         stopWatching(project.id)
+        processes.removeWorkspace(project.id)
         lastConfigData[project.id] = nil
         configChangedOnDisk.remove(project.id)
         save()
@@ -472,6 +476,7 @@ final class ProjectStore {
         for (id, info) in results {
             gitInfo[id] = info
         }
+        processes.refreshStatuses()
     }
 
     func startPeriodicRefresh() {
@@ -539,6 +544,7 @@ final class ProjectStore {
         let result = ConfigReconcile.apply(config, to: projects[index].terminals)
         projects[index].terminals = result.terminals
         projects[index].configName = config.name
+        processes.apply(config, projectId: projectId, directory: url)
         localOnlyTerminals.formUnion(result.localOnly)
         lastConfigData[projectId] = ConfigFile.rawData(in: url)
         save()
