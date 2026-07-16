@@ -11,6 +11,26 @@ struct ItermplexConfig: Codable, Equatable {
     var name: String?
     var agents: [Agent]
     var iterm: [String]
+    var processes: [String: ProcessConfig]?
+
+    init(name: String?, agents: [Agent], iterm: [String], processes: [String: ProcessConfig]? = nil) {
+        self.name = name
+        self.agents = agents
+        self.iterm = iterm
+        self.processes = processes
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name, agents, iterm, processes
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        agents = try c.decodeIfPresent([Agent].self, forKey: .agents) ?? []
+        iterm = try c.decodeIfPresent([String].self, forKey: .iterm) ?? []
+        processes = try c.decodeIfPresent([String: ProcessConfig].self, forKey: .processes)
+    }
 
     static func parse(_ data: Data) throws -> ItermplexConfig {
         try JSONDecoder().decode(ItermplexConfig.self, from: data)
