@@ -86,7 +86,7 @@ Un-collapsing a workspace or pressing the manual refresh button causes all affec
 
 ## Dynamic Tier Recomputation
 
-The scheduler evaluates each check's tier on every tick (every 15 seconds, the Fast interval). This means the decision matrix is recomputed live from the current state. If CI checks settle (all pass or complete), the CI Checks tier drops back to Normal or Slow on the next tick. Similarly, if needs-attention is cleared, the tier drops back to baseline. This ensures the scheduler naturally reflects reality: slow builds do not stay on Fast forever once they complete.
+The scheduler evaluates each check's tier on every tick (every Fast interval, 15 seconds by default). This means the decision matrix is recomputed live from the current state. If CI checks settle (all pass or complete), the CI Checks tier drops back to Normal or Slow on the next tick. Similarly, if needs-attention is cleared, the tier drops back to baseline. This ensures the scheduler naturally reflects reality: slow builds do not stay on Fast forever once they complete.
 
 ## Fixed Matrix
 
