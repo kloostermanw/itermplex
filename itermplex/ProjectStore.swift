@@ -63,6 +63,12 @@ final class ProjectStore {
     private let badgeKey = "itermplex.showWorkspaceBadge"
     private let intervalsKey = "itermplex.checkIntervals"
     private var refreshTask: Task<Void, Never>?
+    private var schedule = CheckSchedule()
+
+    /// Cached owner/repo per workspace, set by the gitSync check and read by the
+    /// pullRequest/ciChecks checks (and the issue/PR URL composition) so those
+    /// checks do not need to re-derive it themselves.
+    private var ownerRepo: [UUID: (String?, String?)] = [:]
 
     /// When on, newly opened (or reopened) sessions get the workspace name as an
     /// iTerm2 badge. Off by default. Persisted; changing it affects future
@@ -169,6 +175,8 @@ final class ProjectStore {
         processes.removeWorkspace(project.id)
         lastConfigData[project.id] = nil
         configChangedOnDisk.remove(project.id)
+        schedule.forget(projectId: project.id)
+        ownerRepo[project.id] = nil
         save()
     }
 
@@ -390,7 +398,13 @@ final class ProjectStore {
     func toggleCollapsed(_ project: Project) {
         guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
         projects[index].collapsed.toggle()
+        let nowExpanded = !projects[index].collapsed
         save()
+        if nowExpanded {
+            let id = project.id
+            for kind in CheckKind.allCases { schedule.reset(ScheduleKey(projectId: id, kind: kind)) }
+            Task { await runDueChecks(now: Date()) }
+        }
     }
 
     func closeTerminal(_ ref: TerminalRef, in project: Project) async {
@@ -464,54 +478,73 @@ final class ProjectStore {
         }
     }
 
-    func refreshAllGitInfo() async {
-        let snapshot = projects
-        let maxConcurrent = 4
-        let results: [(UUID, GitInfo?)] = await withTaskGroup(of: (UUID, GitInfo?).self) { [weak self] group in
-            var index = 0
-            while index < snapshot.count && index < maxConcurrent {
-                let project = snapshot[index]
-                let id = project.id
-                let url = project.url
-                group.addTask { (id, await self?.fullGitInfo(for: url)) }
-                index += 1
-            }
-            var collected: [(UUID, GitInfo?)] = []
-            for await result in group {
-                collected.append(result)
-                if index < snapshot.count {
-                    let project = snapshot[index]
-                    let id = project.id
-                    let url = project.url
-                    group.addTask { (id, await self?.fullGitInfo(for: url)) }
-                    index += 1
-                }
-            }
-            return collected
-        }
-        for (id, info) in results {
-            gitInfo[id] = info
-        }
-        processes.refreshStatuses()
+    /// True when a workspace's CI checks have pending/running entries.
+    private func ciPending(_ projectId: UUID) -> Bool {
+        (gitInfo[projectId]?.checks?.pending ?? 0) > 0
     }
 
-    /// Composes a full GitInfo by running all git/gh checks (the pre-scheduler
-    /// behavior). Used by the manual/periodic full refresh until the scheduler
-    /// (Task 6) runs checks individually.
-    private func fullGitInfo(for url: URL) async -> GitInfo? {
-        guard let sync = await gitProvider.gitSync(for: url) else { return nil }
-        let prNumber = await gitProvider.pullRequestNumber(for: url, branch: sync.branch)
-        var checks: ChecksSummary?
-        if let prNumber { checks = await gitProvider.ciChecks(for: url, prNumber: prNumber) }
-        return GitInfo(
-            branch: sync.branch, behind: sync.behind, ahead: sync.ahead, hasUpstream: sync.hasUpstream,
-            upstreamRef: sync.upstreamRef,
-            baseAhead: sync.baseAhead, baseBehind: sync.baseBehind, hasBase: sync.hasBase, baseRef: sync.baseRef,
-            issueNumber: sync.issueNumber, prNumber: prNumber,
-            issueURL: Self.issueURL(owner: sync.owner, repo: sync.repo, issue: sync.issueNumber),
-            prURL: Self.prURL(owner: sync.owner, repo: sync.repo, pr: prNumber),
-            checks: checks
-        )
+    /// Builds the (key, tier) candidates for one workspace from live context.
+    private func candidates(for project: Project) -> [(key: ScheduleKey, tier: CheckTier)] {
+        let collapsed = project.collapsed
+        let attention = attention.contains(project.id)
+        return CheckKind.allCases.map { kind in
+            let tier = checkTier(for: kind, collapsed: collapsed,
+                                 ciPending: ciPending(project.id), needsAttention: attention)
+            return (ScheduleKey(projectId: project.id, kind: kind), tier)
+        }
+    }
+
+    /// The testable core of the scheduler: run every check that is due at `now`.
+    func runDueChecks(now: Date) async {
+        let all = projects.flatMap { candidates(for: $0) }
+        let due = schedule.due(candidates: all, intervals: checkIntervals, now: now)
+        // Record now up front so a slow check does not immediately re-fire next tick.
+        for key in due { schedule.record(key, at: now) }
+        for key in due { await run(key) }
+    }
+
+    /// Runs a single check and merges its slice into gitInfo (or process status).
+    private func run(_ key: ScheduleKey) async {
+        guard let url = projects.first(where: { $0.id == key.projectId })?.url else { return }
+        switch key.kind {
+        case .gitSync:
+            guard let sync = await gitProvider.gitSync(for: url) else { gitInfo[key.projectId] = nil; return }
+            ownerRepo[key.projectId] = (sync.owner, sync.repo)
+            var info = gitInfo[key.projectId] ?? GitInfo(
+                branch: "", behind: 0, ahead: 0, hasUpstream: false,
+                upstreamRef: nil, baseAhead: 0, baseBehind: 0, hasBase: false, baseRef: nil,
+                issueNumber: nil, prNumber: nil, issueURL: nil, prURL: nil, checks: nil
+            )
+            info.branch = sync.branch
+            info.behind = sync.behind; info.ahead = sync.ahead; info.hasUpstream = sync.hasUpstream; info.upstreamRef = sync.upstreamRef
+            info.baseAhead = sync.baseAhead; info.baseBehind = sync.baseBehind; info.hasBase = sync.hasBase; info.baseRef = sync.baseRef
+            info.issueNumber = sync.issueNumber
+            info.issueURL = Self.issueURL(owner: sync.owner, repo: sync.repo, issue: sync.issueNumber)
+            info.prURL = Self.prURL(owner: sync.owner, repo: sync.repo, pr: info.prNumber)
+            gitInfo[key.projectId] = info
+        case .pullRequest:
+            guard var info = gitInfo[key.projectId], !info.branch.isEmpty else { return }
+            let pr = await gitProvider.pullRequestNumber(for: url, branch: info.branch)
+            info.prNumber = pr
+            let or = ownerRepo[key.projectId]
+            info.prURL = Self.prURL(owner: or?.0, repo: or?.1, pr: pr)
+            gitInfo[key.projectId] = info
+        case .ciChecks:
+            guard var info = gitInfo[key.projectId], let pr = info.prNumber else { return }
+            info.checks = await gitProvider.ciChecks(for: url, prNumber: pr)
+            gitInfo[key.projectId] = info
+        case .processStatus:
+            processes.refreshStatusesForWorkspace(key.projectId)
+        }
+    }
+
+    /// Manual/Instant "run everything now": resets every schedule key so all
+    /// checks are due, then runs them.
+    func refreshAllGitInfo() async {
+        for project in projects {
+            for kind in CheckKind.allCases { schedule.reset(ScheduleKey(projectId: project.id, kind: kind)) }
+        }
+        await runDueChecks(now: Date())
     }
 
     static func issueURL(owner: String?, repo: String?, issue: Int?) -> URL? {
@@ -527,8 +560,9 @@ final class ProjectStore {
         guard refreshTask == nil else { return }
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
-                await self?.refreshAllGitInfo()
-                try? await Task.sleep(nanoseconds: 5 * 60 * 1_000_000_000)
+                await self?.runDueChecks(now: Date())
+                let tick = await self?.checkIntervals.fast ?? 15
+                try? await Task.sleep(nanoseconds: UInt64(tick) * 1_000_000_000)
             }
         }
     }

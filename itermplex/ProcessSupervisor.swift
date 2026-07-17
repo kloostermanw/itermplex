@@ -67,6 +67,13 @@ final class ProcessSupervisor {
         }
     }
 
+    /// Re-probes the status-bearing daemons of one workspace only.
+    func refreshStatusesForWorkspace(_ projectId: UUID) {
+        for process in byProject[projectId] ?? [] where process.config.kind == .daemon && process.config.status != nil {
+            process.probeStatus()
+        }
+    }
+
     func removeWorkspace(_ projectId: UUID) {
         // Tear down both process kinds synchronously before dropping the map
         // entry. A daemon's start command has already exited (no live
