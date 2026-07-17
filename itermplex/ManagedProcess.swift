@@ -17,24 +17,32 @@ final class ManagedProcess: Identifiable {
     private let launcher: ProcessLaunching
     private let graceInterval: Duration
     private let maxRapidRestarts = 3
+    private let restartWindow: Duration
+    private let now: @MainActor () -> ContinuousClock.Instant
 
     private var handle: ProcessHandle?
     private var stopRequested = false
     private var escalation: Task<Void, Never>?
-    private var restartCount = 0
+    /// Timestamps of recent auto-restarts, pruned to `restartWindow`. The cap
+    /// counts a tight crash loop, not crashes spread across the process's life.
+    private var recentRestarts: [ContinuousClock.Instant] = []
 
     init(
         name: String,
         config: ProcessConfig,
         directory: URL,
         launcher: ProcessLaunching,
-        graceInterval: Duration = .seconds(5)
+        graceInterval: Duration = .seconds(5),
+        restartWindow: Duration = .seconds(60),
+        now: @escaping @MainActor () -> ContinuousClock.Instant = { ContinuousClock.now }
     ) {
         self.name = name
         self.config = config
         self.directory = directory
         self.launcher = launcher
         self.graceInterval = graceInterval
+        self.restartWindow = restartWindow
+        self.now = now
     }
 
     // MARK: Controls
@@ -42,11 +50,12 @@ final class ManagedProcess: Identifiable {
     func start() {
         guard state == .idle || state == .finished || state.isFailed else { return }
         stopRequested = false
+        recentRestarts.removeAll() // a manual start re-enables a capped process
         launchMain()
     }
 
     func restart() {
-        restartCount = 0
+        recentRestarts.removeAll()
         guard isAlive else {
             launchMain()
             return
@@ -54,9 +63,13 @@ final class ManagedProcess: Identifiable {
         switch config.kind {
         case .longRunning, .shortRunning:
             stopRequested = true
-            handle?.send(signal: SIGTERM)
-            // The relaunch happens once the exit lands (see handleExit).
+            // The relaunch happens once the exit lands (see handleExit's
+            // pendingRestart branch).
             pendingRestart = true
+            // Escalate SIGINT -> SIGTERM -> SIGKILL (as stop() does) rather than
+            // a lone SIGTERM, so a process that ignores SIGTERM still exits and
+            // the relaunch actually fires instead of hanging forever.
+            escalateSignals()
         case .daemon:
             // A running/orphaned daemon's start command has typically already
             // exited (no handle to signal), so bringing it down means running
@@ -165,8 +178,13 @@ final class ManagedProcess: Identifiable {
     }
 
     private func autoRestart() {
-        restartCount += 1
-        guard restartCount <= maxRapidRestarts else { return } // crash-loop cap
+        let current = now()
+        // Keep only restarts inside the sliding window, so a process that
+        // crashes occasionally over hours is not permanently barred from
+        // restarting the way a lifetime counter would bar it.
+        recentRestarts = recentRestarts.filter { $0.duration(to: current) < restartWindow }
+        guard recentRestarts.count < maxRapidRestarts else { return } // crash-loop cap
+        recentRestarts.append(current)
         launchMain()
     }
 
@@ -175,14 +193,27 @@ final class ManagedProcess: Identifiable {
     /// `pendingRestart` so both `stop()` (which clears it) and `restart()`
     /// (which sets it) can share this without stepping on each other.
     private func performStop() {
-        if let stopCommand = config.stop {
-            _ = try? launcher.launch(
+        guard let stopCommand = config.stop else {
+            escalateSignals()
+            return
+        }
+        do {
+            _ = try launcher.launch(
                 command: stopCommand, directory: directory, environment: config.env,
                 onOutput: { [weak self] in self?.log.append($0) },
                 onExit: { [weak self] _ in self?.settleStopped() }
             )
-        } else {
-            escalateSignals()
+        } catch {
+            // The stop command could not even launch. Don't leave the process
+            // wedged in .stopping: signal a live handle so its exit drives
+            // settleStopped(), or settle immediately when there is nothing to
+            // signal (e.g. a daemon whose start command has already exited).
+            log.append("Stop command failed to launch: \(error)\n")
+            if handle != nil {
+                escalateSignals()
+            } else {
+                settleStopped()
+            }
         }
     }
 
