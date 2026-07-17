@@ -20,7 +20,22 @@ import Foundation
         }
     }
 
-    private func makeStore(_ provider: RecordingProvider) -> ProjectStore {
+    // A provider whose PR lookup can flip from open to closed, to test that a
+    // vanished PR clears the stale CI summary along with it.
+    final class PRClosingProvider: GitInfoProviding, @unchecked Sendable {
+        var prClosed = false
+        func gitSync(for folder: URL) async -> GitSync? {
+            GitSync(branch: "feature/issue-9", behind: 0, ahead: 0, hasUpstream: true,
+                    upstreamRef: "origin/feature/issue-9", baseAhead: 0, baseBehind: 0,
+                    hasBase: false, baseRef: nil, owner: "o", repo: "r", issueNumber: 9)
+        }
+        func pullRequestNumber(for folder: URL, branch: String) async -> Int? { prClosed ? nil : 7 }
+        func ciChecks(for folder: URL, prNumber: Int) async -> ChecksSummary? {
+            ChecksSummary(passing: 1, failing: 0, cancelled: 0, skipped: 0, pending: 1)
+        }
+    }
+
+    private func makeStore(_ provider: GitInfoProviding) -> ProjectStore {
         ProjectStore(defaults: UserDefaults(suiteName: UUID().uuidString)!,
                      service: FakeTerminalService(), gitProvider: provider)
     }
@@ -55,5 +70,22 @@ import Foundation
         #expect(provider.gitSyncCalls == 1)
         await store.runDueChecks(now: t0.addingTimeInterval(21))  // due again
         #expect(provider.gitSyncCalls == 2)
+    }
+
+    @Test func closedPullRequestClearsStaleCIChecks() async {
+        let provider = PRClosingProvider()
+        let store = makeStore(provider)
+        store.checkIntervals = CheckIntervals(fast: 10, normal: 20, slow: 30)
+        store.addProject(url: makeTempDir())
+        let project = store.projects[0]
+        let t0 = Date(timeIntervalSince1970: 1000)
+        await store.runDueChecks(now: t0)
+        #expect(store.gitInfo[project.id]?.prNumber == 7)
+        #expect(store.gitInfo[project.id]?.checks != nil)
+
+        provider.prClosed = true
+        await store.runDueChecks(now: t0.addingTimeInterval(21))  // pullRequest (Normal) due again
+        #expect(store.gitInfo[project.id]?.prNumber == nil)
+        #expect(store.gitInfo[project.id]?.checks == nil)
     }
 }

@@ -528,6 +528,7 @@ final class ProjectStore {
             info.prNumber = pr
             let or = ownerRepo[key.projectId]
             info.prURL = Self.prURL(owner: or?.0, repo: or?.1, pr: pr)
+            if pr == nil { info.checks = nil }
             gitInfo[key.projectId] = info
         case .ciChecks:
             guard var info = gitInfo[key.projectId], let pr = info.prNumber else { return }
