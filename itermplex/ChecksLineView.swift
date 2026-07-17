@@ -6,8 +6,16 @@ struct ChecksLineView: View {
     var body: some View {
         Text(summary.summaryText)
             .font(.caption)
-            .foregroundStyle(summary.hasFailures ? Color.red : Color.green)
+            .foregroundStyle(color)
             .lineLimit(1)
             .truncationMode(.tail)
+    }
+
+    private var color: Color {
+        switch summary.status {
+        case .failed: return .red
+        case .running: return .yellow
+        case .passed: return .green
+        }
     }
 }

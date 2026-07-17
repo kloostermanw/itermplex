@@ -79,4 +79,20 @@ import Foundation
         let clean = ChecksSummary(passing: 291, failing: 0, cancelled: 0, skipped: 3, pending: 0)
         #expect(clean.summaryText == "3 skipped, 291 successfull checks")
     }
+
+    @Test func checksSummaryStatusReflectsFailuresPendingAndSuccess() {
+        let failed = ChecksSummary(passing: 1, failing: 1, cancelled: 0, skipped: 0, pending: 0)
+        #expect(failed.status == .failed)
+        let passed = ChecksSummary(passing: 4, failing: 0, cancelled: 0, skipped: 0, pending: 0)
+        #expect(passed.status == .passed)
+        let running = ChecksSummary(passing: 2, failing: 0, cancelled: 0, skipped: 0, pending: 2)
+        #expect(running.status == .running)
+    }
+
+    @Test func checksSummaryStatusFailuresBeatPending() {
+        let failingWhilePending = ChecksSummary(passing: 1, failing: 1, cancelled: 0, skipped: 0, pending: 3)
+        #expect(failingWhilePending.status == .failed)
+        let cancelledWhilePending = ChecksSummary(passing: 1, failing: 0, cancelled: 1, skipped: 0, pending: 3)
+        #expect(cancelledWhilePending.status == .failed)
+    }
 }
