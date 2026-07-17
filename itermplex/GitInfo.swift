@@ -21,6 +21,23 @@ struct ChecksSummary: Equatable, Sendable {
     }
 }
 
+/// The slice of workspace info produced by the git sync check (no network calls
+/// to GitHub; only `git`).
+struct GitSync: Equatable, Sendable {
+    var branch: String
+    var behind: Int
+    var ahead: Int
+    var hasUpstream: Bool
+    var upstreamRef: String?
+    var baseAhead: Int
+    var baseBehind: Int
+    var hasBase: Bool
+    var baseRef: String?
+    var owner: String?
+    var repo: String?
+    var issueNumber: Int?
+}
+
 struct GitInfo: Equatable, Sendable {
     var branch: String
     var behind: Int

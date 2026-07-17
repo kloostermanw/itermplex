@@ -4,8 +4,22 @@ import Foundation
 
 final class FakeGitInfoProvider: GitInfoProviding, @unchecked Sendable {
     var results: [String: GitInfo] = [:]   // keyed by standardized folder path
-    func info(for folder: URL) async -> GitInfo? {
-        results[folder.standardizedFileURL.path]
+
+    func gitSync(for folder: URL) async -> GitSync? {
+        guard let info = results[folder.standardizedFileURL.path] else { return nil }
+        return GitSync(
+            branch: info.branch, behind: info.behind, ahead: info.ahead, hasUpstream: info.hasUpstream,
+            upstreamRef: info.upstreamRef, baseAhead: info.baseAhead, baseBehind: info.baseBehind,
+            hasBase: info.hasBase, baseRef: info.baseRef, owner: nil, repo: nil, issueNumber: info.issueNumber
+        )
+    }
+
+    func pullRequestNumber(for folder: URL, branch: String) async -> Int? {
+        results[folder.standardizedFileURL.path]?.prNumber
+    }
+
+    func ciChecks(for folder: URL, prNumber: Int) async -> ChecksSummary? {
+        results[folder.standardizedFileURL.path]?.checks
     }
 }
 

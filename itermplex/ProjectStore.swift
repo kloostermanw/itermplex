@@ -449,15 +449,14 @@ final class ProjectStore {
 
     func refreshAllGitInfo() async {
         let snapshot = projects
-        let provider = gitProvider
         let maxConcurrent = 4
-        let results: [(UUID, GitInfo?)] = await withTaskGroup(of: (UUID, GitInfo?).self) { group in
+        let results: [(UUID, GitInfo?)] = await withTaskGroup(of: (UUID, GitInfo?).self) { [weak self] group in
             var index = 0
             while index < snapshot.count && index < maxConcurrent {
                 let project = snapshot[index]
                 let id = project.id
                 let url = project.url
-                group.addTask { (id, await provider.info(for: url)) }
+                group.addTask { (id, await self?.fullGitInfo(for: url)) }
                 index += 1
             }
             var collected: [(UUID, GitInfo?)] = []
@@ -467,7 +466,7 @@ final class ProjectStore {
                     let project = snapshot[index]
                     let id = project.id
                     let url = project.url
-                    group.addTask { (id, await provider.info(for: url)) }
+                    group.addTask { (id, await self?.fullGitInfo(for: url)) }
                     index += 1
                 }
             }
@@ -477,6 +476,34 @@ final class ProjectStore {
             gitInfo[id] = info
         }
         processes.refreshStatuses()
+    }
+
+    /// Composes a full GitInfo by running all git/gh checks (the pre-scheduler
+    /// behavior). Used by the manual/periodic full refresh until the scheduler
+    /// (Task 6) runs checks individually.
+    private func fullGitInfo(for url: URL) async -> GitInfo? {
+        guard let sync = await gitProvider.gitSync(for: url) else { return nil }
+        let prNumber = await gitProvider.pullRequestNumber(for: url, branch: sync.branch)
+        var checks: ChecksSummary?
+        if let prNumber { checks = await gitProvider.ciChecks(for: url, prNumber: prNumber) }
+        return GitInfo(
+            branch: sync.branch, behind: sync.behind, ahead: sync.ahead, hasUpstream: sync.hasUpstream,
+            upstreamRef: sync.upstreamRef,
+            baseAhead: sync.baseAhead, baseBehind: sync.baseBehind, hasBase: sync.hasBase, baseRef: sync.baseRef,
+            issueNumber: sync.issueNumber, prNumber: prNumber,
+            issueURL: Self.issueURL(owner: sync.owner, repo: sync.repo, issue: sync.issueNumber),
+            prURL: Self.prURL(owner: sync.owner, repo: sync.repo, pr: prNumber),
+            checks: checks
+        )
+    }
+
+    static func issueURL(owner: String?, repo: String?, issue: Int?) -> URL? {
+        guard let owner, let repo, let issue else { return nil }
+        return URL(string: "https://github.com/\(owner)/\(repo)/issues/\(issue)")
+    }
+    static func prURL(owner: String?, repo: String?, pr: Int?) -> URL? {
+        guard let owner, let repo, let pr else { return nil }
+        return URL(string: "https://github.com/\(owner)/\(repo)/pull/\(pr)")
     }
 
     func startPeriodicRefresh() {
