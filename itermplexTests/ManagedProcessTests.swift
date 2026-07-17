@@ -27,6 +27,8 @@ final class FakeProcessLauncher: @preconcurrency ProcessLaunching, @unchecked Se
     /// Exit code delivered synchronously at launch for one-shot commands
     /// (status probes, stop commands). When nil, the launch stays "running".
     var immediateExit: [String: Int32] = [:]
+    /// Commands whose launch throws, simulating a spawn/PTY failure.
+    var failingCommands: Set<String> = []
 
     func launch(
         command: String,
@@ -35,6 +37,7 @@ final class FakeProcessLauncher: @preconcurrency ProcessLaunching, @unchecked Se
         onOutput: @escaping @MainActor (String) -> Void,
         onExit: @escaping @MainActor (Int32) -> Void
     ) throws -> ProcessHandle {
+        if failingCommands.contains(command) { throw ProcessLaunchError.spawnFailed(1) }
         let launch = FakeLaunch(command: command, onOutput: onOutput, onExit: onExit)
         launches.append(launch)
         if let code = immediateExit[command] {
@@ -179,5 +182,67 @@ final class FakeProcessLauncher: @preconcurrency ProcessLaunching, @unchecked Se
         launcher.last.onExit(0) // exits due to the stop
         #expect(launcher.launches.count == 1) // not relaunched
         #expect(p.state == .idle)
+    }
+
+    @Test func longRunningRestartEscalatesThenRelaunches() {
+        let launcher = FakeProcessLauncher()
+        let p = ManagedProcess(name: "npm", config: ProcessConfig(command: "npm run dev", kind: .longRunning), directory: dir, launcher: launcher, graceInterval: .zero)
+        p.start()
+        #expect(launcher.launches.count == 1)
+        p.restart()
+        // Escalates (SIGINT first) rather than a lone SIGTERM, so a process that
+        // ignores SIGTERM still exits.
+        #expect(launcher.last.handle.signals.first == SIGINT)
+        launcher.last.onExit(0) // process exits from the signal
+        #expect(launcher.launches.count == 2) // relaunched once the exit lands
+        #expect(p.state == .running)
+    }
+
+    @Test func longRunningStopCommandLaunchFailureEscalatesSignals() {
+        let launcher = FakeProcessLauncher()
+        launcher.failingCommands = ["stop.sh"]
+        let p = ManagedProcess(name: "srv", config: ProcessConfig(command: "server", kind: .longRunning, stop: "stop.sh"), directory: dir, launcher: launcher, graceInterval: .zero)
+        p.start()
+        p.stop()
+        // With a live handle, a failed stop command falls back to signalling it.
+        #expect(launcher.last.handle.signals.first == SIGINT)
+        #expect(p.state == .stopping)
+    }
+
+    @Test func crashLoopCapStopsRapidRestarts() {
+        let launcher = FakeProcessLauncher()
+        let clock = ContinuousClock.now
+        let p = ManagedProcess(
+            name: "npm", config: ProcessConfig(command: "npm run dev", kind: .longRunning, autoRestart: true),
+            directory: dir, launcher: launcher, restartWindow: .seconds(60), now: { clock }
+        )
+        p.start()
+        #expect(launcher.launches.count == 1)
+        // Three rapid crashes within the window each relaunch; the fourth is capped.
+        launcher.last.onExit(1); #expect(launcher.launches.count == 2)
+        launcher.last.onExit(1); #expect(launcher.launches.count == 3)
+        launcher.last.onExit(1); #expect(launcher.launches.count == 4)
+        launcher.last.onExit(1)
+        #expect(launcher.launches.count == 4) // capped, not relaunched
+        #expect(p.state == .failed(1))
+        // A manual start re-enables it.
+        p.start()
+        #expect(launcher.launches.count == 5)
+    }
+
+    @Test func crashesOutsideWindowDoNotHitCap() {
+        let launcher = FakeProcessLauncher()
+        var clock = ContinuousClock.now
+        let p = ManagedProcess(
+            name: "npm", config: ProcessConfig(command: "npm run dev", kind: .longRunning, autoRestart: true),
+            directory: dir, launcher: launcher, restartWindow: .seconds(60), now: { clock }
+        )
+        p.start()
+        // Four crashes spread far apart (window elapses between each) never cap.
+        for expected in 2...5 {
+            launcher.last.onExit(1)
+            #expect(launcher.launches.count == expected)
+            clock = clock.advanced(by: .seconds(120))
+        }
     }
 }
