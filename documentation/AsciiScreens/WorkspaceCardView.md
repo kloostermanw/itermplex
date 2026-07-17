@@ -37,7 +37,9 @@ Legend:
   up (ahead) and down (behind) counts.
 - `(Issue #N)` / `(PR #N)`: filled pills from `IssuePRLineView`.
 - `1 failing, 1 successfull checks`: `ChecksLineView`, wording from
-  `ChecksSummary.summaryText`.
+  `ChecksSummary.summaryText`. The line color follows `ChecksSummary.status`:
+  red on failures, yellow while checks are still pending (nothing failed yet),
+  green when everything completed without failures.
 - `│`: the leading rule that groups the process and terminal rows
   (`WorkspaceCardView.children`).
 - `●` / `○`: process status dot (`ProcessRowView`) — filled = running, open =
