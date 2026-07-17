@@ -61,6 +61,7 @@ final class ProjectStore {
     let processes: ProcessSupervisor
     private let storageKey = "itermplex.projects.bookmarks"
     private let badgeKey = "itermplex.showWorkspaceBadge"
+    private let intervalsKey = "itermplex.checkIntervals"
     private var refreshTask: Task<Void, Never>?
 
     /// When on, newly opened (or reopened) sessions get the workspace name as an
@@ -70,6 +71,17 @@ final class ProjectStore {
         didSet {
             guard showWorkspaceBadge != oldValue else { return }
             defaults.set(showWorkspaceBadge, forKey: badgeKey)
+        }
+    }
+
+    /// Tier durations (seconds) for periodic checks. Clamped to valid ranges and
+    /// persisted. Changing it takes effect on the next scheduler tick.
+    var checkIntervals: CheckIntervals {
+        didSet {
+            let clamped = checkIntervals.clamped()
+            if clamped != checkIntervals { checkIntervals = clamped; return } // re-enter with clamped value
+            guard checkIntervals != oldValue else { return }
+            defaults.set([checkIntervals.fast, checkIntervals.normal, checkIntervals.slow], forKey: intervalsKey)
         }
     }
 
@@ -121,6 +133,11 @@ final class ProjectStore {
         self.gitProvider = gitProvider
         self.processes = processSupervisor
         self.showWorkspaceBadge = defaults.bool(forKey: badgeKey)
+        if let arr = defaults.array(forKey: intervalsKey) as? [Int], arr.count == 3 {
+            self.checkIntervals = CheckIntervals(fast: arr[0], normal: arr[1], slow: arr[2]).clamped()
+        } else {
+            self.checkIntervals = .default
+        }
         load()
     }
 
