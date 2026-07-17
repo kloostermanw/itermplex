@@ -10,13 +10,13 @@ iTermPlex performs these four checks, each refreshing a different aspect of work
 Runs `git fetch` and computes the branch's ahead/behind status relative to its upstream. Also extracts branch metadata including any linked issue number.
 
 **Pull Request Lookup** (network)
-Queries GitHub for a pull request matching the current branch. Requires a valid owner/repo from Git Sync to proceed.
+Queries GitHub for a pull request matching the current branch. Requires a non-empty branch from Git Sync to proceed. Owner and repo (also from Git Sync) are used to construct the PR URL.
 
 **CI Checks** (network)
-Fetches the CI status of the workspace's pull request from GitHub. Shows pending, running, and completed checks (pass, fail, skip). Requires the pull request lookup to have found a PR.
+Fetches the CI status of the workspace's pull request from GitHub. Buckets checks into passing, failing, cancelled, skipped, and pending (in-progress checks count as pending). Requires the pull request lookup to have found a PR.
 
 **Process Status** (local)
-Probes the iTerm session's foreground job and daemon process status. Runs frequently to detect when the Claude agent starts or exits.
+Re-probes daemon-kind processes that declare a status command by running that command to learn whether the backing service is up or down. Local operation, same tiering as the other three checks.
 
 ## Tiers and Intervals
 
