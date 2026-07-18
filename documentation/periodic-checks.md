@@ -7,7 +7,7 @@ The iTermPlex app continuously monitors each workspace through a tiered schedule
 iTermPlex performs these four checks, each refreshing a different aspect of workspace information:
 
 **Git Sync** (local)
-Runs `git fetch` and computes the branch's ahead/behind status relative to its upstream. Also extracts branch metadata including any linked issue number.
+Runs `git fetch` and computes the branch's ahead/behind status relative to its upstream. Also extracts branch metadata including any linked issue number. In addition to its scheduled runs, Git Sync is poked immediately by the `.git` watcher (see "Real-Time Git Watcher" below) so local commits and checkouts show up without waiting for the next tick.
 
 **Pull Request Lookup** (network)
 Queries GitHub for a pull request matching the current branch. Requires a non-empty branch from Git Sync to proceed. Owner and repo (also from Git Sync) are used to construct the PR URL.
@@ -91,6 +91,24 @@ The scheduler evaluates each check's tier on every tick (every Fast interval, 15
 ## Fixed Matrix
 
 The tier decision matrix is built into the application code and cannot be customized by users. The rules live in `CheckTier.swift` in the `checkTier(for:collapsed:ciPending:needsAttention:)` function. Changing the matrix requires a code change and rebuild.
+
+## Real-Time Git Watcher
+
+Polling alone means a local commit or branch switch is only reflected on the next due Git Sync, up to one Fast interval late. To make local git actions feel immediate, the app also runs a lightweight file-system watcher over each workspace's `.git` (`GitDirWatcher`), built on the same `DispatchSource` pattern as the config-file watcher.
+
+This is a hybrid design: the watcher does not replace polling and does not parse git state itself. It is purely a "re-read now" signal. On any observed change it marks that workspace's Git Sync check as due and runs due checks immediately, so the branch and ahead/behind counts refresh in near real time. The poll stays in place because it is the only way to see changes that are not local disk events (for example a teammate's push, which appears only after the next `git fetch`).
+
+**What it watches.** Two stable paths, each armed with its own source:
+
+  * `.git/logs/HEAD` (the reflog) is appended in place on every HEAD movement (commit, checkout, reset, merge, rebase), which makes it a reliable, non-replaced signal for the two most common local actions.
+  * `.git/refs/heads` (a directory) changes on branch create/delete and on the ref update a commit performs.
+
+**Scope and behavior.**
+
+  * Only Git Sync is poked. Pull Request and CI Checks stay on their poll cadence, so a burst of local commits never triggers GitHub network lookups.
+  * A single git action can touch several watched paths at once, so events are coalesced (debounced ~300ms) into a single re-read.
+  * The watcher is best-effort and degrades gracefully to polling. If `.git` is absent, or is a file rather than a directory (worktrees and submodules store `.git` as a file), or a path cannot be opened, that path is skipped and the workspace simply keeps relying on the scheduled checks.
+  * Remote pushes from other people, and local pushes to `origin`, are not reliably local disk events for this watcher, so they remain poll-dependent by design.
 
 ## Out of Scope
 
