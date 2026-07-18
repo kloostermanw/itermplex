@@ -10,6 +10,7 @@ struct WorkspaceCardView: View {
     let configChanged: Bool
     let isLocalOnly: (TerminalRef) -> Bool
     let onActivate: (TerminalRef) -> Void
+    let onRestartTerminal: (TerminalRef) -> Void
     let onRenameTerminal: (TerminalRef) -> Void
     let onRemoveTerminal: (TerminalRef) -> Void
     let onCloseTerminal: (TerminalRef) -> Void
@@ -19,13 +20,20 @@ struct WorkspaceCardView: View {
     let onToggleCollapsed: () -> Void
     let onEnableSync: () -> Void
     let onApplyConfig: () -> Void
+    let processes: [ManagedProcess]
+    let onProcessStart: (ManagedProcess) -> Void
+    let onProcessStop: (ManagedProcess) -> Void
+    let onProcessRestart: (ManagedProcess) -> Void
+    let onProcessKill: (ManagedProcess) -> Void
+    let onOpenProcessLog: (ManagedProcess) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             header
             if !collapsed {
-                if let gitInfo, gitInfo.issueNumber != nil || gitInfo.prNumber != nil {
+                if let gitInfo {
                     IssuePRLineView(
+                        branch: gitInfo.branch,
                         issueNumber: gitInfo.issueNumber,
                         issueURL: gitInfo.issueURL,
                         prNumber: gitInfo.prNumber,
@@ -103,13 +111,28 @@ struct WorkspaceCardView: View {
                 .padding(.leading, 7)
                 .padding(.trailing, 12)
             VStack(alignment: .leading, spacing: 2) {
+                if !processes.isEmpty {
+                    ForEach(processes) { process in
+                        ProcessRowView(
+                            process: process,
+                            onStart: { onProcessStart(process) },
+                            onStop: { onProcessStop(process) },
+                            onRestart: { onProcessRestart(process) },
+                            onKill: { onProcessKill(process) },
+                            onOpenLog: { onOpenProcessLog(process) }
+                        )
+                    }
+                }
                 ForEach(project.terminals) { ref in
                     TerminalRowView(
                         label: ref.label,
                         kind: ref.kind,
                         isExited: ref.kind == .claude && runState(ref) == .exited,
                         needsAttention: needsAttention(ref),
-                        isLocalOnly: isLocalOnly(ref)
+                        isLocalOnly: isLocalOnly(ref),
+                        onPlay: { onActivate(ref) },
+                        onStop: { onCloseTerminal(ref) },
+                        onRestart: { onRestartTerminal(ref) }
                     )
                     .onTapGesture { onActivate(ref) }
                     .contextMenu {

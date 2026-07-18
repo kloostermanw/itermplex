@@ -7,7 +7,8 @@ so the intended structure stays readable without running the app.
 
 A project renders as a `WorkspaceCardView`. The header carries the collapse
 chevron, the project name, and the git ahead/behind indicators. Below the header
-sit the Issue/PR pills, the CI checks line, and the terminal tree.
+sit the Issue/PR pills, the CI checks line, the Processes group, and the
+terminal tree.
 
 The ahead/behind indicators are two stacked, right aligned rows. Each row is
 labeled with the remote ref it compares against: the base row against the remote
@@ -20,6 +21,9 @@ default branch (`origin/develop`), the upstream row against the branch upstream
 │                                      origin/feature/issue-15   ↑1 ↓0 │
 │   (Issue #15)  (PR #16)                                             │
 │   1 failing, 1 successfull checks                                   │
+│   │  ● queue          (filled green = running)                      │
+│   │  ○ phpunit        (open green = passed)                         │
+│   │  ○ npm            (open red = crashed)                          │
 │   │  > Terminal 1                                                   │
 │   │  ✦ Claude Code (Python")                                        │
 │   │  ✦ old-agent                                     (local)        │
@@ -31,11 +35,24 @@ Legend:
 - `▾` / `▸`: expanded / collapsed chevron (`WorkspaceCardView.header`).
 - `origin/... ↑a ↓b`: `AheadBehindView`, one row per comparison, label plus the
   up (ahead) and down (behind) counts.
-- `(Issue #N)` / `(PR #N)`: filled pills from `IssuePRLineView`.
+- `(Issue #N)` / `(PR #N)`: filled pills from `IssuePRLineView`. When no issue is
+  linked to the branch, the issue pill is replaced by the branch name rendered as
+  plain, secondary text (no pill), so the line always shows some branch context.
 - `1 failing, 1 successfull checks`: `ChecksLineView`, wording from
-  `ChecksSummary.summaryText`.
-- `│`: the leading rule that groups the terminal rows (`WorkspaceCardView.children`).
+  `ChecksSummary.summaryText`. The line color follows `ChecksSummary.status`:
+  red on failures, yellow while checks are still pending (nothing failed yet),
+  green when everything completed without failures.
+- `│`: the leading rule that groups the process and terminal rows
+  (`WorkspaceCardView.children`).
+- `●` / `○`: process status dot (`ProcessRowView`) — filled = running, open =
+  not running; green = success/healthy, red = failed, gray = neutral.
 - `>`: terminal row glyph. `✦`: Claude row glyph (`TerminalRowView`).
+- Hovering a row reveals trailing action buttons (play / stop / refresh, plus a
+  log button on process rows). A plain click on a process row is a no-op, while a
+  plain click on a terminal or Claude row still activates it (`onActivate`).
+  Terminal buttons are wired here to `onActivate` (play), `onCloseTerminal`
+  (stop), and `onRestartTerminal` (refresh). See `ProcessRowView.md` and
+  `TerminalRowView.md`.
 - `⟳`: appears only when `itermplex.json` changed on disk. Clicking it applies
   the file to the rows (`WorkspaceCardView.header`, `onApplyConfig`).
 - `(local)`: a row tracked locally but absent from `itermplex.json`, kept alive
@@ -49,8 +66,9 @@ workspace's current rows.
 ## Collapsed card
 
 When collapsed, the chevron flips and everything below and beside the header is
-hidden: the terminal tree, the Issue/PR pills, the checks line, and the
-ahead/behind indicators. Only the chevron and project name remain.
+hidden: the terminal tree, the Processes group, the Issue/PR pills, the checks
+line, and the ahead/behind indicators. Only the chevron and project name
+remain.
 
 ```
 ┌───────────────────────────────────────────────────────────────────┐

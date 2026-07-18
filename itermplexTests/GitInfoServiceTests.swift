@@ -26,21 +26,23 @@ struct FakeCommandRunner: CommandRunning {
             if args.contains("pr") { return CommandResult(stdout: "334\n", stderr: "", status: 0) }
             return CommandResult(stdout: "", stderr: "", status: 1)
         }
-        let info = await svc.info(for: URL(fileURLWithPath: "/tmp/x"))
-        #expect(info?.branch == "feature/issue-333")
-        #expect(info?.behind == 3)
-        #expect(info?.ahead == 5)
-        #expect(info?.hasUpstream == true)
-        #expect(info?.issueNumber == 333)
-        #expect(info?.prNumber == 334)
-        #expect(info?.issueURL?.absoluteString == "https://github.com/kloostermanw/itermplex/issues/333")
-        #expect(info?.prURL?.absoluteString == "https://github.com/kloostermanw/itermplex/pull/334")
+        let folder = URL(fileURLWithPath: "/tmp/x")
+        let sync = await svc.gitSync(for: folder)
+        #expect(sync?.branch == "feature/issue-333")
+        #expect(sync?.behind == 3)
+        #expect(sync?.ahead == 5)
+        #expect(sync?.hasUpstream == true)
+        #expect(sync?.issueNumber == 333)
+        #expect(sync?.owner == "kloostermanw" && sync?.repo == "itermplex")
+
+        let prNumber = await svc.pullRequestNumber(for: folder, branch: sync?.branch ?? "")
+        #expect(prNumber == 334)
     }
 
     @Test func returnsNilForNonRepo() async {
         let svc = service { _, _ in CommandResult(stdout: "", stderr: "fatal: not a git repository", status: 128) }
-        let info = await svc.info(for: URL(fileURLWithPath: "/tmp/x"))
-        #expect(info == nil)
+        let sync = await svc.gitSync(for: URL(fileURLWithPath: "/tmp/x"))
+        #expect(sync == nil)
     }
 
     @Test func noUpstreamHidesCounts() async {
@@ -51,12 +53,15 @@ struct FakeCommandRunner: CommandRunning {
             if args.contains("remote") { return CommandResult(stdout: "https://github.com/o/r.git", stderr: "", status: 0) }
             return CommandResult(stdout: "", stderr: "", status: 0) // fetch, pr → empty
         }
-        let info = await svc.info(for: URL(fileURLWithPath: "/tmp/x"))
-        #expect(info?.hasUpstream == false)
-        #expect(info?.behind == 0)
-        #expect(info?.ahead == 0)
-        #expect(info?.issueNumber == nil)   // "develop" has no trailing digits
-        #expect(info?.prNumber == nil)      // gh returned empty
+        let folder = URL(fileURLWithPath: "/tmp/x")
+        let sync = await svc.gitSync(for: folder)
+        #expect(sync?.hasUpstream == false)
+        #expect(sync?.behind == 0)
+        #expect(sync?.ahead == 0)
+        #expect(sync?.issueNumber == nil)   // "develop" has no trailing digits
+
+        let prNumber = await svc.pullRequestNumber(for: folder, branch: sync?.branch ?? "")
+        #expect(prNumber == nil)      // gh returned empty
     }
 
     @Test func assemblesBaseAheadBehindAndChecks() async {
@@ -76,17 +81,22 @@ struct FakeCommandRunner: CommandRunning {
             if args.contains("pr") { return CommandResult(stdout: "334\n", stderr: "", status: 0) }
             return CommandResult(stdout: "", stderr: "", status: 0)
         }
-        let info = await svc.info(for: URL(fileURLWithPath: "/tmp/x"))
-        #expect(info?.hasBase == true)
-        #expect(info?.baseRef == "origin/develop")
-        #expect(info?.upstreamRef == "origin/feature/issue-333")
-        #expect(info?.baseBehind == 4)
-        #expect(info?.baseAhead == 7)
-        #expect(info?.behind == 1)
-        #expect(info?.ahead == 2)
-        #expect(info?.checks?.passing == 1)
-        #expect(info?.checks?.failing == 1)
-        #expect(info?.checks?.skipped == 1)
-        #expect(info?.checks?.hasFailures == true)
+        let folder = URL(fileURLWithPath: "/tmp/x")
+        let sync = await svc.gitSync(for: folder)
+        #expect(sync?.hasBase == true)
+        #expect(sync?.baseRef == "origin/develop")
+        #expect(sync?.upstreamRef == "origin/feature/issue-333")
+        #expect(sync?.baseBehind == 4)
+        #expect(sync?.baseAhead == 7)
+        #expect(sync?.behind == 1)
+        #expect(sync?.ahead == 2)
+
+        let prNumber = await svc.pullRequestNumber(for: folder, branch: sync?.branch ?? "")
+        #expect(prNumber == 334)
+        let checks = await svc.ciChecks(for: folder, prNumber: prNumber ?? 0)
+        #expect(checks?.passing == 1)
+        #expect(checks?.failing == 1)
+        #expect(checks?.skipped == 1)
+        #expect(checks?.hasFailures == true)
     }
 }

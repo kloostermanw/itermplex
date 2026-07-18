@@ -264,6 +264,32 @@ import Foundation
         #expect(store.lastError != nil)
     }
 
+    @Test func processesBlockSurvivesConfigEmit() async throws {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "s1", windowId: "w1")]
+        let store = ProjectStore(
+            defaults: makeDefaults(), service: fake,
+            processSupervisor: ProcessSupervisor(launcher: FakeProcessLauncher())
+        )
+        let folder = tempFolder()
+        let processes = ["web": ProcessConfig(command: "sail up -d", kind: .daemon, stop: "sail down", status: "sail ps")]
+        try ConfigFile.write(
+            ItermplexConfig(name: nil, agents: [], iterm: ["Terminal 1"], processes: processes),
+            in: folder
+        )
+        store.addProject(url: folder)
+        #expect(store.projects[0].configProcesses == processes)
+
+        // Trigger an emit (a structural mutation with sync already on, since
+        // adding a project with an existing config file scaffolds rows but
+        // doesn't itself write).
+        store.rename(store.projects[0].terminals[0], in: store.projects[0], to: "server")
+
+        let config = try ConfigFile.read(in: folder)
+        #expect(config?.processes == processes)
+        #expect(config?.iterm == ["server"])
+    }
+
     @Test func renamingClaudeKeepsSlotStable() async throws {
         let fake = FakeTerminalService()
         fake.handles = [TerminalHandle(sessionId: "s1", windowId: "w1")]
@@ -295,6 +321,7 @@ import Foundation
             configChanged: store.configChangedOnDisk.contains(project.id),
             isLocalOnly: { store.localOnlyTerminals.contains($0.id) },
             onActivate: { _ in },
+            onRestartTerminal: { _ in },
             onRenameTerminal: { _ in },
             onRemoveTerminal: { _ in },
             onCloseTerminal: { _ in },
@@ -303,7 +330,13 @@ import Foundation
             onRemoveProject: {},
             onToggleCollapsed: {},
             onEnableSync: {},
-            onApplyConfig: {}
+            onApplyConfig: {},
+            processes: [],
+            onProcessStart: { _ in },
+            onProcessStop: { _ in },
+            onProcessRestart: { _ in },
+            onProcessKill: { _ in },
+            onOpenProcessLog: { _ in }
         )
     }
 }

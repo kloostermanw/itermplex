@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 
 struct IssuePRLineView: View {
+    let branch: String
     let issueNumber: Int?
     let issueURL: URL?
     let prNumber: Int?
@@ -11,6 +12,12 @@ struct IssuePRLineView: View {
         HStack(spacing: 8) {
             if let issueNumber {
                 pill(text: "Issue #\(issueNumber)", url: issueURL)
+            } else {
+                Text(branch)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
             if let prNumber {
                 pill(text: "PR #\(prNumber)", url: prURL)

@@ -1,0 +1,18 @@
+{
+  "agents" : [
+    {
+      "slot" : "⠂ Design terminal session bookmarking and sync feature (caffeinate)",
+      "type" : "claude"
+    },
+    {
+      "slot" : "Claude 2",
+      "type" : "claude"
+    }
+  ],
+  "iterm" : [
+    "Terminal 1"
+  ],
+  "processes": {
+    "fork": { "command": "/usr/local/bin/fork", "kind": "short_running" }
+  }
+}
