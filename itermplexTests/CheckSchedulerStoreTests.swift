@@ -72,6 +72,34 @@ import Foundation
         #expect(provider.gitSyncCalls == 2)
     }
 
+    @Test func gitDirChangePokeForcesGitSyncBeforeInterval() async {
+        let provider = RecordingProvider()
+        let store = makeStore(provider)
+        store.checkIntervals = CheckIntervals(fast: 10, normal: 20, slow: 30)
+        store.addProject(url: makeTempDir())
+        let id = store.projects[0].id
+        let t0 = Date(timeIntervalSince1970: 1000)
+        await store.runDueChecks(now: t0)                    // gitSync runs once
+        #expect(provider.gitSyncCalls == 1)
+
+        // A poke only 1s later is well inside the Normal (20s) interval, so it
+        // re-runs gitSync only because the poke marks it due again.
+        await store.gitDirDidChange(id, now: t0.addingTimeInterval(1))
+        #expect(provider.gitSyncCalls == 2)
+    }
+
+    @Test func gitDirChangeForUnknownProjectIsNoOp() async {
+        let provider = RecordingProvider()
+        let store = makeStore(provider)
+        store.checkIntervals = CheckIntervals(fast: 10, normal: 20, slow: 30)
+        store.addProject(url: makeTempDir())
+        let t0 = Date(timeIntervalSince1970: 1000)
+        await store.runDueChecks(now: t0)
+        let before = provider.gitSyncCalls
+        await store.gitDirDidChange(UUID(), now: t0.addingTimeInterval(1))  // no such project
+        #expect(provider.gitSyncCalls == before)
+    }
+
     @Test func closedPullRequestClearsStaleCIChecks() async {
         let provider = PRClosingProvider()
         let store = makeStore(provider)

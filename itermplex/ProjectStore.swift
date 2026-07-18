@@ -44,6 +44,10 @@ final class ProjectStore {
 
     private var watchers: [UUID: ConfigWatcher] = [:]
 
+    /// One `.git` watcher per workspace, giving snappy local git feedback
+    /// alongside the poll. Started for every workspace; a no-op for non-repos.
+    private var gitWatchers: [UUID: GitDirWatcher] = [:]
+
     /// Foreground job names that mean "no agent running, just a shell".
     /// Confirmed/extended by the design spike (Task 0).
     static let shellJobNames: Set<String> = [
@@ -157,10 +161,12 @@ final class ProjectStore {
         )) != nil else { return }
         projects.append(Project(url: standardized))
         save()
-        if let added = projects.last, ConfigFile.exists(in: added.url) {
+        guard let added = projects.last else { return }
+        if ConfigFile.exists(in: added.url) {
             reconcileWithFile(added.id)
             startWatching(added)
         }
+        startGitWatching(added)
     }
 
     func remove(_ project: Project) {
@@ -172,6 +178,7 @@ final class ProjectStore {
             jobNames[id] = nil
         }
         stopWatching(project.id)
+        stopGitWatching(project.id)
         processes.removeWorkspace(project.id)
         lastConfigData[project.id] = nil
         configChangedOnDisk.remove(project.id)
@@ -539,6 +546,17 @@ final class ProjectStore {
         }
     }
 
+    /// A local `.git` change (commit, checkout, branch edit) was observed by the
+    /// watcher: mark the git-sync check due and run due checks now so branch and
+    /// ahead/behind state update immediately instead of on the next poll. Only
+    /// git-sync is poked; PR/CI stay on their poll cadence so frequent local
+    /// commits do not trigger network lookups. A no-op for unknown workspaces.
+    func gitDirDidChange(_ projectId: UUID, now: Date = Date()) async {
+        guard projects.contains(where: { $0.id == projectId }) else { return }
+        schedule.reset(ScheduleKey(projectId: projectId, kind: .gitSync))
+        await runDueChecks(now: now)
+    }
+
     /// Manual/Instant "run everything now": resets every schedule key so all
     /// checks are due, then runs them.
     func refreshAllGitInfo() async {
@@ -652,6 +670,21 @@ final class ProjectStore {
         watchers[projectId] = nil
     }
 
+    private func startGitWatching(_ project: Project) {
+        guard gitWatchers[project.id] == nil else { return }
+        let id = project.id
+        let watcher = GitDirWatcher(workspace: project.url) { [weak self] in
+            Task { await self?.gitDirDidChange(id) }
+        }
+        gitWatchers[id] = watcher
+        watcher.start()
+    }
+
+    private func stopGitWatching(_ projectId: UUID) {
+        gitWatchers[projectId]?.stop()
+        gitWatchers[projectId] = nil
+    }
+
     /// Watcher callback. If the file was deleted, forgets the last-seen bytes
     /// and clears the signal, but leaves the folder watcher armed so a later
     /// external re-create is still detected; otherwise raises the change
@@ -699,9 +732,12 @@ final class ProjectStore {
             ))
         }
         projects = loaded
-        for project in projects where ConfigFile.exists(in: project.url) {
-            reconcileWithFile(project.id)
-            startWatching(project)
+        for project in projects {
+            if ConfigFile.exists(in: project.url) {
+                reconcileWithFile(project.id)
+                startWatching(project)
+            }
+            startGitWatching(project)
         }
     }
 
