@@ -47,6 +47,12 @@ Legend:
 - `●` / `○`: process status dot (`ProcessRowView`) — filled = running, open =
   not running; green = success/healthy, red = failed, gray = neutral.
 - `>`: terminal row glyph. `✦`: Claude row glyph (`TerminalRowView`).
+- Hovering a row reveals trailing action buttons (play / stop / refresh, plus a
+  log button on process rows). A plain click on a process row is a no-op, while a
+  plain click on a terminal or Claude row still activates it (`onActivate`).
+  Terminal buttons are wired here to `onActivate` (play), `onCloseTerminal`
+  (stop), and `onRestartTerminal` (refresh). See `ProcessRowView.md` and
+  `TerminalRowView.md`.
 - `⟳`: appears only when `itermplex.json` changed on disk. Clicking it applies
   the file to the rows (`WorkspaceCardView.header`, `onApplyConfig`).
 - `(local)`: a row tracked locally but absent from `itermplex.json`, kept alive

@@ -28,6 +28,7 @@ struct ContentView: View {
                         configChanged: store.configChangedOnDisk.contains(project.id),
                         isLocalOnly: { store.localOnlyTerminals.contains($0.id) },
                         onActivate: { activate($0, in: project) },
+                        onRestartTerminal: { restartTerminal($0, in: project) },
                         onRenameTerminal: { startRename($0, in: project) },
                         onRemoveTerminal: { store.removeTerminal($0, in: project) },
                         onCloseTerminal: { closeTerminal($0, in: project) },
@@ -151,6 +152,14 @@ struct ContentView: View {
         Task {
             isBusy = true
             await store.closeTerminal(ref, in: project)
+            isBusy = false
+        }
+    }
+
+    private func restartTerminal(_ ref: TerminalRef, in project: Project) {
+        Task {
+            isBusy = true
+            try? await store.restart(sessionId: ref.sessionId)
             isBusy = false
         }
     }

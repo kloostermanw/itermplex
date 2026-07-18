@@ -8,7 +8,10 @@ struct ProcessRowView: View {
     let onKill: () -> Void
     let onOpenLog: () -> Void
 
+    @State private var isHovered = false
+
     private var dot: ProcessDot { processDot(for: process.state) }
+    private var isRunning: Bool { processIsRunning(for: process.state) }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -21,9 +24,15 @@ struct ProcessRowView: View {
                 Text("(orphan)").font(.caption2).foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
+            if isHovered {
+                actionButtons
+            }
         }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
         .contentShape(Rectangle())
-        .onTapGesture(perform: onOpenLog)
+        .background(hoverHighlight)
+        .onHover { isHovered = $0 }
         .help(helpText)
         .contextMenu {
             Button("Start", action: onStart)
@@ -32,6 +41,27 @@ struct ProcessRowView: View {
             Button("Kill", action: onKill)
             Divider()
             Button("Open log", action: onOpenLog)
+        }
+    }
+
+    // Not running shows a single play button; running shows stop + restart. A
+    // process row always offers the log button.
+    @ViewBuilder private var actionButtons: some View {
+        HStack(spacing: 8) {
+            if isRunning {
+                RowActionButton(systemName: "stop.fill", help: "Stop", action: onStop)
+                RowActionButton(systemName: "arrow.clockwise", help: "Restart", action: onRestart)
+            } else {
+                RowActionButton(systemName: "play.fill", help: "Start", action: onStart)
+            }
+            RowActionButton(systemName: "doc.plaintext", help: "Open log", action: onOpenLog)
+        }
+    }
+
+    @ViewBuilder private var hoverHighlight: some View {
+        if isHovered {
+            RoundedRectangle(cornerRadius: 5)
+                .fill(.secondary.opacity(0.12))
         }
     }
 

@@ -76,6 +76,7 @@ import Testing
             configChanged: false,
             isLocalOnly: { _ in false },
             onActivate: { _ in },
+            onRestartTerminal: { _ in },
             onRenameTerminal: { _ in },
             onRemoveTerminal: { _ in },
             onCloseTerminal: { _ in },
