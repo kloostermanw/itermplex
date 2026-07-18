@@ -3,25 +3,23 @@ verbose = false
 source = develop
 target = main
 
-# cmd1 that runs after the release is created
-# cmd1 = none | vendor/bin/readmegen
-cmd1 = none
+# cmd1 runs on the release branch, before the merge+tag, so its committed
+# file lands inside the tagged release. We use it to sync MARKETING_VERSION
+# in project.yml to the new tag.
+cmd1 = scripts/set-version.sh
 
 # cmd1_arguments belong by cmd1
-# cmd1_arguments = none | --from {current_release} --release {new_release}
-cmd1_arguments = --from {current_release} --release {new_release}
+cmd1_arguments = --release {new_release}
 
 # Specify the editor of choice, this will open the editor after the release is created and the cmd1 has run
 # editor vim | nano | none
 editor = none
 
-# The edit will load the following file
-# and this file will commited in the release branch
-# cmd1_filename = none | CHANGELOG.md
-cmd1_filename = none
+# git-release stages and commits this file after cmd1 runs.
+cmd1_filename = project.yml
 
-# cmd1_commit_message
-cmd1_commit_message = none
+# cmd1_commit_message (git-release does not interpolate {new_release} here)
+cmd1_commit_message = build: sync marketing version to release tag
 
 # cmd2 that runs after cmd1
 # cmd2 = none
@@ -39,9 +37,9 @@ cmd2_filename = none
 # cmd2_commit_message
 cmd2_commit_message = docs: update RELEASE_NOTES
 
-# cmd3 that runs after release is pushed to origin
-cmd3 = none
+# cmd3 runs at the very end, on develop, after the tag is pushed to origin.
+# Create the GitHub release, build the .dmg, and upload it.
+cmd3 = scripts/publish-release.sh
 
 # cmd3_arguments belong by cmd3
-# cmd3_arguments = none | --from {current_release} --release {new_release}
-cmd3_arguments = none
+cmd3_arguments = --release {new_release}
