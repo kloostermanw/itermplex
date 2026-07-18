@@ -32,7 +32,10 @@ default branch (`origin/develop`), the upstream row against the branch upstream
 
 Legend:
 
-- `▾` / `▸`: expanded / collapsed chevron (`WorkspaceCardView.header`).
+- `▾` / `▸`: expanded / collapsed chevron (`WorkspaceCardView.header`). The
+  chevron sits in a fixed width slot and the header aligns on the first text
+  baseline, so the project name keeps the same position whether the card is
+  collapsed or expanded and whether the ahead/behind block has one row or two.
 - `origin/... ↑a ↓b`: `AheadBehindView`, one row per comparison, label plus the
   up (ahead) and down (behind) counts.
 - `(Issue #N)` / `(PR #N)`: filled pills from `IssuePRLineView`. When no issue is

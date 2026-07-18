@@ -55,10 +55,11 @@ struct WorkspaceCardView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: collapsed ? "chevron.right" : "chevron.down")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .frame(width: 12, alignment: .center)
             Text(project.name)
                 .font(.title3)
                 .lineLimit(1)
