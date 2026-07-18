@@ -10,6 +10,7 @@ struct WorkspaceCardView: View {
     let configChanged: Bool
     let isLocalOnly: (TerminalRef) -> Bool
     let onActivate: (TerminalRef) -> Void
+    let onRestartTerminal: (TerminalRef) -> Void
     let onRenameTerminal: (TerminalRef) -> Void
     let onRemoveTerminal: (TerminalRef) -> Void
     let onCloseTerminal: (TerminalRef) -> Void
@@ -128,7 +129,10 @@ struct WorkspaceCardView: View {
                         kind: ref.kind,
                         isExited: ref.kind == .claude && runState(ref) == .exited,
                         needsAttention: needsAttention(ref),
-                        isLocalOnly: isLocalOnly(ref)
+                        isLocalOnly: isLocalOnly(ref),
+                        onPlay: { onActivate(ref) },
+                        onStop: { onCloseTerminal(ref) },
+                        onRestart: { onRestartTerminal(ref) }
                     )
                     .onTapGesture { onActivate(ref) }
                     .contextMenu {

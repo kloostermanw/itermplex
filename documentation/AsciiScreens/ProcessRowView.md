@@ -8,14 +8,15 @@ structure stays readable without running the app.
 
 A row is a status dot plus the process name. When the process is `.orphaned`
 (still running but removed from `itermplex.json`) an `(orphan)` tag is
-appended. Tapping the row opens its log window; right-clicking opens a context
+appended. A plain left click is a no-op; hovering lightens the row background
+and reveals action buttons on the trailing edge. Right-clicking opens a context
 menu with Start, Stop, Restart, Kill, and Open log.
 
 ```
-● queue                                   running
-○ phpunit                                 finished (exit 0)
-○ npm                                     failed (exit 1)
-● migrate            (orphan)             orphaned, still running
+● queue                        [◼] [⟳] [▤]    running (hovered)
+○ phpunit                                      finished (exit 0)
+○ npm                          [▶]  [▤]        failed (exit 1, hovered)
+● migrate            (orphan)  [◼] [⟳] [▤]    orphaned, still running
 ```
 
 Legend:
@@ -27,9 +28,16 @@ Legend:
   neutral (`.idle`, `.starting`).
 - Process name: `process.name`, single line, middle-truncated.
 - `(orphan)`: shown only when `process.state == .orphaned`.
-- Tap: calls `onOpenLog`, which opens the process's log window
-  (`ContentView.openProcessLog`).
-- Hover: a tooltip (`.help`) with a human-readable state description (e.g.
-  "Running", "Failed (exit 1)", "Running, but removed from itermplex.json").
+- Click: no-op. The row no longer opens the log on tap.
+- Hover: the background lightens (rounded `.secondary.opacity(0.12)` fill) and
+  the trailing action buttons appear. A tooltip (`.help`) shows a human-readable
+  state description (e.g. "Running", "Failed (exit 1)", "Running, but removed
+  from itermplex.json").
+- Action buttons (visible on hover only), driven by `processIsRunning(for:)`
+  which is true for `.running`/`.starting`/`.stopping`/`.orphaned`:
+  - `[▶]` play (`play.fill`) → `onStart`, shown when not running.
+  - `[◼]` stop (`stop.fill`) → `onStop`, shown when running.
+  - `[⟳]` refresh (`arrow.clockwise`) → `onRestart`, shown when running.
+  - `[▤]` log (`doc.plaintext`) → `onOpenLog`, always shown.
 - Context menu: Start / Stop / Restart / Kill / Open log, wired to
   `ManagedProcess.start()/stop()/restart()/kill()` and `onOpenLog`.

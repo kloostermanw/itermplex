@@ -34,3 +34,16 @@ func processDot(for state: ProcessState) -> ProcessDot {
         return ProcessDot(fill: .open, color: .gray)
     }
 }
+
+/// Whether a process should be treated as running for the row's hover actions.
+/// Running (stop + refresh shown) while it is up or transitioning
+/// (`.starting`/`.stopping`) and while `.orphaned` (still alive, just dropped
+/// from config); not running (play shown) once it is `.idle`/`.finished`/`.failed`.
+func processIsRunning(for state: ProcessState) -> Bool {
+    switch state {
+    case .running, .starting, .stopping, .orphaned:
+        return true
+    case .idle, .finished, .failed:
+        return false
+    }
+}

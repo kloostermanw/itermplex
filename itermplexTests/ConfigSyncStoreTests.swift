@@ -321,6 +321,7 @@ import Foundation
             configChanged: store.configChangedOnDisk.contains(project.id),
             isLocalOnly: { store.localOnlyTerminals.contains($0.id) },
             onActivate: { _ in },
+            onRestartTerminal: { _ in },
             onRenameTerminal: { _ in },
             onRemoveTerminal: { _ in },
             onCloseTerminal: { _ in },

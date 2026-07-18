@@ -11,4 +11,16 @@ import Testing
         #expect(processDot(for: .starting) == ProcessDot(fill: .open, color: .gray))
         #expect(processDot(for: .stopping) == ProcessDot(fill: .filled, color: .green))
     }
+
+    @Test func runningMapping() {
+        // Live: a process is running while it is up or transitioning.
+        #expect(processIsRunning(for: .running))
+        #expect(processIsRunning(for: .starting))
+        #expect(processIsRunning(for: .stopping))
+        #expect(processIsRunning(for: .orphaned))
+        // Not live: never started or already exited.
+        #expect(!processIsRunning(for: .idle))
+        #expect(!processIsRunning(for: .finished))
+        #expect(!processIsRunning(for: .failed(1)))
+    }
 }
