@@ -35,7 +35,9 @@ Legend:
 - `▾` / `▸`: expanded / collapsed chevron (`WorkspaceCardView.header`).
 - `origin/... ↑a ↓b`: `AheadBehindView`, one row per comparison, label plus the
   up (ahead) and down (behind) counts.
-- `(Issue #N)` / `(PR #N)`: filled pills from `IssuePRLineView`.
+- `(Issue #N)` / `(PR #N)`: filled pills from `IssuePRLineView`. When no issue is
+  linked to the branch, the issue pill is replaced by the branch name rendered as
+  plain, secondary text (no pill), so the line always shows some branch context.
 - `1 failing, 1 successfull checks`: `ChecksLineView`, wording from
   `ChecksSummary.summaryText`. The line color follows `ChecksSummary.status`:
   red on failures, yellow while checks are still pending (nothing failed yet),

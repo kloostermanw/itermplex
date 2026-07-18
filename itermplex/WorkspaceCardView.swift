@@ -30,8 +30,9 @@ struct WorkspaceCardView: View {
         VStack(alignment: .leading, spacing: 6) {
             header
             if !collapsed {
-                if let gitInfo, gitInfo.issueNumber != nil || gitInfo.prNumber != nil {
+                if let gitInfo {
                     IssuePRLineView(
+                        branch: gitInfo.branch,
                         issueNumber: gitInfo.issueNumber,
                         issueURL: gitInfo.issueURL,
                         prNumber: gitInfo.prNumber,
