@@ -64,17 +64,29 @@ final class RemoteWorkspaceStore {
                 switch result {
                 case let .success(.string(text)): self.apply(snapshotText: text); self.receive()
                 case .success: self.receive()
-                case .failure: self.handleDrop()
+                case .failure: self.handleDrop(failureStatus: (task?.response as? HTTPURLResponse)?.statusCode)
                 }
             }
         }
     }
 
-    private func handleDrop() {
+    /// Pure decision of what state a dropped connection should land in, given the
+    /// HTTP status of the WebSocket handshake response (if any). A 401 means the
+    /// server rejected the token, which is unrecoverable without user action; any
+    /// other status (or none, e.g. a plain connectivity failure) is treated as a
+    /// transient drop worth retrying.
+    static func connectionState(forFailureStatus status: Int?) -> RemoteConnectionState {
+        status == 401 ? .unauthorized : .unreachable
+    }
+
+    private func handleDrop(failureStatus: Int?) {
         socket = nil
         guard running else { return }
-        state = .unreachable
-        // Reconnect after a short backoff.
+        let newState = Self.connectionState(forFailureStatus: failureStatus)
+        state = newState
+        guard newState == .unreachable else { return }
+        // Reconnect after a short backoff. Not scheduled for `.unauthorized`: a bad
+        // token won't fix itself, so retrying would just spin forever.
         reconnectTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             guard !Task.isCancelled, self.running else { return }

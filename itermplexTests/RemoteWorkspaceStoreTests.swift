@@ -22,4 +22,14 @@ import Foundation
         s.apply(snapshotText: "not json")
         #expect(s.workspaces.projects.isEmpty)
     }
+
+    @Test func a401FailureStatusIsUnauthorized() {
+        #expect(RemoteWorkspaceStore.connectionState(forFailureStatus: 401) == .unauthorized)
+    }
+
+    @Test func otherFailureStatusesAreUnreachable() {
+        #expect(RemoteWorkspaceStore.connectionState(forFailureStatus: nil) == .unreachable)
+        #expect(RemoteWorkspaceStore.connectionState(forFailureStatus: 500) == .unreachable)
+        #expect(RemoteWorkspaceStore.connectionState(forFailureStatus: 403) == .unreachable)
+    }
 }
