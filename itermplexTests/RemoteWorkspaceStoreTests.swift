@@ -32,4 +32,19 @@ import Foundation
         #expect(RemoteWorkspaceStore.connectionState(forFailureStatus: 500) == .unreachable)
         #expect(RemoteWorkspaceStore.connectionState(forFailureStatus: 403) == .unreachable)
     }
+
+    @Test func successStatusesYieldNoActionError() {
+        #expect(RemoteWorkspaceStore.actionErrorMessage(status: 200, hadTransportError: false) == nil)
+        #expect(RemoteWorkspaceStore.actionErrorMessage(status: 201, hadTransportError: false) == nil)
+        #expect(RemoteWorkspaceStore.actionErrorMessage(status: 204, hadTransportError: false) == nil)
+    }
+
+    @Test func a404StatusYieldsAnActionErrorMentioningTheStatus() {
+        let message = RemoteWorkspaceStore.actionErrorMessage(status: 404, hadTransportError: false)
+        #expect(message?.contains("404") == true)
+    }
+
+    @Test func aTransportErrorWithNoStatusYieldsAnActionError() {
+        #expect(RemoteWorkspaceStore.actionErrorMessage(status: nil, hadTransportError: true) != nil)
+    }
 }

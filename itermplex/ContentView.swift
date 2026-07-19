@@ -201,6 +201,13 @@ struct ContentView: View {
                     .padding(.horizontal, 12)
                     .padding(.bottom, 10)
             }
+            if let error = remoteStore.lastActionError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 6)
+            }
         }
     }
 
