@@ -53,9 +53,11 @@ Legend:
   `WorkspaceCardView.md`. Remote cards feed data from
   `RemoteWorkspaceStore.workspaces` (`DecodedRemoteWorkspaces`); actions that
   have no remote equivalent (rename, remove terminal, remove project, enable
-  sync, apply config, process controls) are wired to no-ops, and tapping a
-  remote terminal row (`onActivate`) is a no-op for now — attaching to a
-  remote session is wired in a later change.
+  sync, apply config, process controls) are wired to no-ops. Tapping a remote
+  terminal row (`onActivate`) calls `openRemoteTerminal(remoteStore, ref)`,
+  which opens (or focuses an existing) tab in the shared `remote-terminal`
+  window for `(remoteStore.connection.id, ref.sessionId, ref.label)` and
+  brings that window forward. See `RemoteTerminalTabsView.md`.
 - `Divider`: drawn between cards, not after the last one, in both Local and
   Remote sections.
 - Drop zone: a `Color.clear` region at the bottom of the Local section that
