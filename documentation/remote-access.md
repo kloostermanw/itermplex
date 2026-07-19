@@ -131,9 +131,12 @@ project, enable sync, apply config, process controls) is wired to a no-op on
 remote cards; those controls render but do nothing. There is no way to
 create, rename, or remove a remote workspace from the controlling instance.
 
-Actions are fire and forget: `RemoteWorkspaceStore` posts the request and
-ignores the result. The next pushed snapshot (see below) reconciles the UI,
-typically within a few hundred milliseconds.
+Actions do not block the UI: `RemoteWorkspaceStore` sends the request and lets
+the next pushed snapshot (see below) reconcile the UI, typically within a few
+hundred milliseconds. A failure is not swallowed, though. If the request
+returns a non success status or the host cannot be reached, the store records a
+short message in `lastActionError` and the section shows it as a small red
+caption, so a rejected open, restart, or close is visible rather than silent.
 
 ### Live state: the control channel
 
@@ -148,7 +151,10 @@ something changes; there is no polling and no incremental diff format, every
 push is the complete workspace list. The client applies each snapshot
 wholesale (`RemoteWorkspaceStore.apply(snapshotText:)`) and marks the
 connection `.connected` on the first one it decodes. If the socket drops, the
-store marks itself `.unreachable` and retries after a short backoff.
+store marks itself `.unreachable` and retries after a short backoff. A rejected
+upgrade (a wrong token, which the server answers with HTTP 401) instead marks
+the connection `.unauthorized` and stops retrying, since a retry cannot succeed
+until the token is corrected in Settings.
 
 ### The control REST API
 

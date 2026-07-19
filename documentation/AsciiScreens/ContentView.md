@@ -15,7 +15,9 @@ lists one `WorkspaceCardView` per project with a `Divider` between cards. Only
 the Local section has the trailing drop zone and drag-to-reorder support; a
 Remote section instead shows a state line ("Connecting…", "Unreachable.
 Retrying…", "Unauthorized: check the connection's token.") in place of cards
-whenever that connection isn't `.connected`.
+whenever that connection isn't `.connected`. When a remote action (open,
+restart, or close) is rejected by the server, that section also shows a small
+red caption from `store.lastActionError`, so the failure is visible.
 
 ```
 ┌───────────────────────────────────────────────────────────────────┐
@@ -32,7 +34,7 @@ whenever that connection isn't `.connected`.
 │                                                                     │
 │                       (drop zone: drag a card here to move to end)  │
 ├───────────────────────────────────────────────────────────────────┤
-│ ▾ Office Mac                                         ( ⟳ )  ( – )  │  SidebarSectionHeaderView (remote)
+│ ▾ Office Mac                                         ( ⟳ )  ( - )  │  SidebarSectionHeaderView (remote)
 ├───────────────────────────────────────────────────────────────────┤
 │ ▾ web-app                             origin/main             ↑0 ↓2 │  WorkspaceCardView (remote)
 │   │  > Terminal 1                                                   │
