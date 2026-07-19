@@ -3,6 +3,8 @@ import AppKit
 
 struct ContentView: View {
     let store: ProjectStore
+    let remoteConnections: RemoteConnectionsStore
+    let remoteWorkspaces: RemoteWorkspacesController
     @Environment(\.openWindow) private var openWindow
     @State private var monitor: SessionMonitoring = ITermMonitor()
     @State private var mcpHost: MCPServerHost?
@@ -11,60 +13,18 @@ struct ContentView: View {
     @State private var isBusy = false
     @State private var renameTarget: (project: Project, ref: TerminalRef)?
     @State private var renameText = ""
+    @State private var sections = SectionCollapseState()
+    @State private var remoteCardCollapsed: Set<UUID> = []
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                SidebarHeaderView(
-                    onRefresh: { Task { await store.refreshAllGitInfo() } },
-                    onAdd: addProject
-                )
-                ForEach(store.projects) { project in
-                    WorkspaceCardView(
-                        project: project,
-                        collapsed: project.collapsed,
-                        gitInfo: store.gitInfo[project.id],
-                        runState: { store.runState(for: $0) },
-                        needsAttention: { store.attention.contains($0.id) },
-                        syncEnabled: store.isSyncEnabled(project),
-                        configChanged: store.configChangedOnDisk.contains(project.id),
-                        isLocalOnly: { store.localOnlyTerminals.contains($0.id) },
-                        onActivate: { activate($0, in: project) },
-                        onRestartTerminal: { restartTerminal($0, in: project) },
-                        onRenameTerminal: { startRename($0, in: project) },
-                        onRemoveTerminal: { store.removeTerminal($0, in: project) },
-                        onCloseTerminal: { closeTerminal($0, in: project) },
-                        onOpenTerminal: { openTerminal(for: project) },
-                        onOpenClaude: { openClaude(for: project) },
-                        onRemoveProject: { store.remove(project) },
-                        onToggleCollapsed: { store.toggleCollapsed(project) },
-                        onEnableSync: { store.enableConfigSync(for: project) },
-                        onApplyConfig: { store.applyConfigChanges(for: project) },
-                        processes: store.processes.processes(for: project.id),
-                        onProcessStart: { $0.start() },
-                        onProcessStop: { $0.stop() },
-                        onProcessRestart: { $0.restart() },
-                        onProcessKill: { $0.kill() },
-                        onOpenProcessLog: { openProcessLog($0, in: project) }
-                    )
-                    .draggable(project.id.uuidString)
-                    .dropDestination(for: String.self) { items, _ in
-                        guard let first = items.first, let dragged = UUID(uuidString: first) else { return false }
-                        store.move(id: dragged, before: project.id)
-                        return true
-                    }
-                    if project.id != store.projects.last?.id {
-                        Divider()
+                localSection
+                ForEach(remoteConnections.connections) { connection in
+                    if let remoteStore = remoteWorkspaces.stores[connection.id] {
+                        remoteSection(remoteStore)
                     }
                 }
-                Color.clear
-                    .frame(maxWidth: .infinity, minHeight: 40)
-                    .contentShape(Rectangle())
-                    .dropDestination(for: String.self) { items, _ in
-                        guard let first = items.first, let dragged = UUID(uuidString: first) else { return false }
-                        store.moveToEnd(id: dragged)
-                        return true
-                    }
             }
         }
         .frame(minWidth: 240)
@@ -84,6 +44,7 @@ struct ContentView: View {
                 await host.start()
             }
             await syncRemoteServer()
+            remoteWorkspaces.sync()
         }
         .onChange(of: store.remoteEnabled) { Task { await syncRemoteServer() } }
         .onChange(of: store.remotePort) { Task { await syncRemoteServer(forceRestart: true) } }
@@ -117,6 +78,146 @@ struct ContentView: View {
             get: { renameTarget != nil },
             set: { presented in if !presented { renameTarget = nil } }
         )
+    }
+
+    @ViewBuilder
+    private var localSection: some View {
+        SidebarSectionHeaderView(
+            title: "Local",
+            collapsed: sections.isCollapsed("local"),
+            onToggle: { sections.setCollapsed("local", !sections.isCollapsed("local")) },
+            buttons: [
+                .init(system: "arrow.clockwise", help: "Refresh git status",
+                      action: { Task { await store.refreshAllGitInfo() } }),
+                .init(system: "plus", help: "Add project folder", action: addProject)
+            ]
+        )
+        if !sections.isCollapsed("local") {
+            ForEach(store.projects) { project in
+                WorkspaceCardView(
+                    project: project,
+                    collapsed: project.collapsed,
+                    gitInfo: store.gitInfo[project.id],
+                    runState: { store.runState(for: $0) },
+                    needsAttention: { store.attention.contains($0.id) },
+                    syncEnabled: store.isSyncEnabled(project),
+                    configChanged: store.configChangedOnDisk.contains(project.id),
+                    isLocalOnly: { store.localOnlyTerminals.contains($0.id) },
+                    onActivate: { activate($0, in: project) },
+                    onRestartTerminal: { restartTerminal($0, in: project) },
+                    onRenameTerminal: { startRename($0, in: project) },
+                    onRemoveTerminal: { store.removeTerminal($0, in: project) },
+                    onCloseTerminal: { closeTerminal($0, in: project) },
+                    onOpenTerminal: { openTerminal(for: project) },
+                    onOpenClaude: { openClaude(for: project) },
+                    onRemoveProject: { store.remove(project) },
+                    onToggleCollapsed: { store.toggleCollapsed(project) },
+                    onEnableSync: { store.enableConfigSync(for: project) },
+                    onApplyConfig: { store.applyConfigChanges(for: project) },
+                    processes: store.processes.processes(for: project.id),
+                    onProcessStart: { $0.start() },
+                    onProcessStop: { $0.stop() },
+                    onProcessRestart: { $0.restart() },
+                    onProcessKill: { $0.kill() },
+                    onOpenProcessLog: { openProcessLog($0, in: project) }
+                )
+                .draggable(project.id.uuidString)
+                .dropDestination(for: String.self) { items, _ in
+                    guard let first = items.first, let dragged = UUID(uuidString: first) else { return false }
+                    store.move(id: dragged, before: project.id)
+                    return true
+                }
+                if project.id != store.projects.last?.id {
+                    Divider()
+                }
+            }
+            Color.clear
+                .frame(maxWidth: .infinity, minHeight: 40)
+                .contentShape(Rectangle())
+                .dropDestination(for: String.self) { items, _ in
+                    guard let first = items.first, let dragged = UUID(uuidString: first) else { return false }
+                    store.moveToEnd(id: dragged)
+                    return true
+                }
+        }
+    }
+
+    @ViewBuilder
+    private func remoteSection(_ remoteStore: RemoteWorkspaceStore) -> some View {
+        let key = "remote-\(remoteStore.connection.id.uuidString)"
+        SidebarSectionHeaderView(
+            title: remoteStore.connection.name,
+            collapsed: sections.isCollapsed(key),
+            onToggle: { sections.setCollapsed(key, !sections.isCollapsed(key)) },
+            buttons: [
+                .init(system: "arrow.clockwise", help: "Reconnect",
+                      action: { remoteStore.stop(); remoteStore.start() }),
+                .init(system: "minus.circle", help: "Remove connection", action: {
+                    remoteConnections.remove(id: remoteStore.connection.id)
+                    remoteWorkspaces.sync()
+                })
+            ]
+        )
+        if !sections.isCollapsed(key) {
+            if remoteStore.state == .connected {
+                let projects = remoteStore.workspaces.projects
+                ForEach(projects) { project in
+                    WorkspaceCardView(
+                        project: project,
+                        collapsed: remoteCardCollapsed.contains(project.id),
+                        gitInfo: remoteStore.workspaces.gitInfo[project.id],
+                        runState: { remoteStore.workspaces.runStates[$0.id] ?? .exited },
+                        needsAttention: { remoteStore.workspaces.attention.contains($0.id) },
+                        syncEnabled: true,
+                        configChanged: false,
+                        isLocalOnly: { _ in false },
+                        onActivate: { _ in }, // remote attach wired in Task 9
+                        onRestartTerminal: { remoteStore.restart(sessionId: $0.sessionId) },
+                        onRenameTerminal: { _ in },
+                        onRemoveTerminal: { _ in },
+                        onCloseTerminal: { remoteStore.close(sessionId: $0.sessionId) },
+                        onOpenTerminal: { remoteStore.openTerminal(workspaceId: project.id) },
+                        onOpenClaude: { remoteStore.openClaude(workspaceId: project.id) },
+                        onRemoveProject: {},
+                        onToggleCollapsed: { toggleRemoteCardCollapsed(project.id) },
+                        onEnableSync: {},
+                        onApplyConfig: {},
+                        processes: [],
+                        onProcessStart: { _ in },
+                        onProcessStop: { _ in },
+                        onProcessRestart: { _ in },
+                        onProcessKill: { _ in },
+                        onOpenProcessLog: { _ in }
+                    )
+                    if project.id != projects.last?.id {
+                        Divider()
+                    }
+                }
+            } else {
+                Text(stateText(remoteStore.state))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 10)
+            }
+        }
+    }
+
+    private func toggleRemoteCardCollapsed(_ id: UUID) {
+        if remoteCardCollapsed.contains(id) {
+            remoteCardCollapsed.remove(id)
+        } else {
+            remoteCardCollapsed.insert(id)
+        }
+    }
+
+    private func stateText(_ state: RemoteConnectionState) -> String {
+        switch state {
+        case .connecting: return "Connecting…"
+        case .connected: return "Connected"
+        case .unauthorized: return "Unauthorized: check the connection's token."
+        case .unreachable: return "Unreachable. Retrying…"
+        }
     }
 
     /// Starts or stops `RemoteServer` to match `store.remoteEnabled`. When the
