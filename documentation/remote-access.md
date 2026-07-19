@@ -23,6 +23,9 @@ become later sub projects that reuse the same WebSocket protocol.
    reach the session. Colors and screen updates render live.
 6. Turn the toggle off to stop the server. Open pages can no longer connect.
 
+If the server cannot start (for example the remote port is already in use), the
+Settings section shows the error instead of a URL, so you can pick a free port.
+
 ## Architecture
 
 The path from the browser back to iTerm2, in order:
@@ -41,7 +44,11 @@ The path from the browser back to iTerm2, in order:
   relaunch with backoff, silent failure, mirroring `ITermMonitor`). It decodes
   each frame and feeds it through a `VTSynthesizer` that turns the grid into a
   terminal byte stream. The first frame for a new size reports a resize; later
-  frames rewrite only the rows that changed.
+  frames rewrite only the rows that changed. Streaming is per connection, so
+  several viewers (a page reload, or two devices) can watch the same session at
+  once, each with its own VT state; a viewer that joins an already streaming
+  session is painted the last frame immediately. When a session ends, every
+  viewer of it receives an end signal and the browser shows "Session ended".
 - **`iterm_streamer.py`.** A persistent daemon. For each attached session it
   subscribes to iTerm2 screen updates via `session.get_screen_streamer()` and
   emits styled grid frames as NDJSON. Input arrives on the same daemon and is

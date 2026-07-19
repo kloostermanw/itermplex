@@ -22,6 +22,15 @@ final class VTSynthesizer {
     private var lastRows: Int?
     private var lastLines: [[ScreenCell]]?
 
+    /// Forgets the last frame so the next `render` produces a full redraw.
+    /// Used when the daemon relaunches: the new stream starts from a full
+    /// screen, and diffing against stale rows would under-draw.
+    func reset() {
+        lastCols = nil
+        lastRows = nil
+        lastLines = nil
+    }
+
     func render(_ frame: ScreenFrame) -> VTOutput {
         var resize: VTResize? = nil
         let dimsChanged = frame.cols != lastCols || frame.rows != lastRows

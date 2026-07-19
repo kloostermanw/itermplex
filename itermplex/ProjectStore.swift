@@ -135,6 +135,10 @@ final class ProjectStore {
     /// The shared secret required on every remote request and socket.
     let remoteToken: RemoteAccessToken
 
+    /// Last error from starting the remote server (e.g. the port is in use), or
+    /// nil when it started cleanly. Shown in Settings; not persisted.
+    var remoteStartupError: String?
+
     private static func clampPort(_ port: Int) -> Int {
         min(max(port, portRange.lowerBound), portRange.upperBound)
     }

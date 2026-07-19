@@ -129,8 +129,10 @@ struct ContentView: View {
                 remoteServer = nil
             }
             if remoteServer == nil {
+                store.remoteStartupError = nil
                 let server = RemoteServer(store: store, streamer: streamer,
-                                          token: store.remoteToken, port: store.remotePort)
+                                          token: store.remoteToken, port: store.remotePort,
+                                          onStartupError: { message in store.remoteStartupError = message })
                 remoteServer = server
                 await server.start()
             }
@@ -138,6 +140,7 @@ struct ContentView: View {
             remoteServer?.stop()
             remoteServer = nil
             streamer.stop()
+            store.remoteStartupError = nil
         }
     }
 
