@@ -30,6 +30,12 @@ final class ProjectStore {
     private(set) var attention: Set<UUID> = []
     private(set) var jobNames: [UUID: String] = [:]
 
+    /// Subscribers to `workspaceChanges()`, keyed by subscription id.
+    private var changeSubscribers: [UUID: AsyncStream<Void>.Continuation] = [:]
+    /// Whether `armChangeTracking()` currently has an active `withObservationTracking`
+    /// registration pending; avoids re-arming redundantly.
+    private var changeTrackingArmed = false
+
     /// Terminal ids that are tracked locally but absent from the on-disk config
     /// (kept alive after an external removal). Cleared when the config is written.
     private(set) var localOnlyTerminals: Set<UUID> = []
@@ -203,6 +209,45 @@ final class ProjectStore {
         self.remotePort = storedRemotePort == 0 ? RemoteServer.defaultPort : Self.clampPort(storedRemotePort)
         self.remoteToken = RemoteAccessToken(defaults: defaults)
         load()
+    }
+
+    /// Registers a new subscriber for the coalesced workspace change signal. The
+    /// returned stream yields once per change to `projects`, `gitInfo`, `attention`,
+    /// or `jobNames`, letting a caller (e.g. the remote control channel) push a
+    /// fresh snapshot without polling. Call `cancelWorkspaceChanges(_:)` with the
+    /// returned id when done to release the subscription.
+    func workspaceChanges() -> (id: UUID, stream: AsyncStream<Void>) {
+        let id = UUID()
+        let stream = AsyncStream<Void> { continuation in
+            changeSubscribers[id] = continuation
+        }
+        if !changeTrackingArmed { changeTrackingArmed = true; armChangeTracking() }
+        return (id, stream)
+    }
+
+    /// Unregisters a subscription previously created by `workspaceChanges()`.
+    func cancelWorkspaceChanges(_ id: UUID) {
+        changeSubscribers[id]?.finish()
+        changeSubscribers[id] = nil
+    }
+
+    /// Observes the store's own sidebar-relevant properties. `withObservationTracking`
+    /// fires `onChange` once when any accessed property next mutates; re-arm to keep
+    /// observing. This turns Observation into a broadcast signal without editing
+    /// every mutation site.
+    private func armChangeTracking() {
+        withObservationTracking {
+            _ = projects
+            _ = gitInfo
+            _ = attention
+            _ = jobNames
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                for continuation in self.changeSubscribers.values { continuation.yield(()) }
+                if !self.changeSubscribers.isEmpty { self.armChangeTracking() } else { self.changeTrackingArmed = false }
+            }
+        }
     }
 
     func addProject(url: URL) {
