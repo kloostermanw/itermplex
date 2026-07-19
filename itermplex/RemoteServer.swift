@@ -17,16 +17,19 @@ final class RemoteServer {
     private let streamer: ITermScreenStreamer
     private let token: RemoteAccessToken
     private let port: Int
+    private let onStartupError: (@MainActor @Sendable (String) -> Void)?
     private var runTask: Task<Void, Never>?
 
     private(set) var startupError: String?
 
     init(store: ProjectStore, streamer: ITermScreenStreamer,
-         token: RemoteAccessToken, port: Int = RemoteServer.defaultPort) {
+         token: RemoteAccessToken, port: Int = RemoteServer.defaultPort,
+         onStartupError: (@MainActor @Sendable (String) -> Void)? = nil) {
         self.store = store
         self.streamer = streamer
         self.token = token
         self.port = port
+        self.onStartupError = onStartupError
     }
 
     func start() async {
@@ -50,10 +53,11 @@ final class RemoteServer {
             guard Self.tokenOK(request, expected: expected) else {
                 return Response(status: .unauthorized)
             }
-            let data = await MainActor.run { () -> Data in
+            let data = await MainActor.run { () -> Data? in
                 let payload = RemoteSessionList.json(projects: store.projects)
-                return (try? JSONSerialization.data(withJSONObject: payload)) ?? Data()
+                return try? JSONSerialization.data(withJSONObject: payload)
             }
+            guard let data else { return Response(status: .internalServerError) }
             return Response(status: .ok,
                             headers: [.contentType: "application/json"],
                             body: ResponseBody(byteBuffer: ByteBuffer(data: data)))
@@ -73,7 +77,7 @@ final class RemoteServer {
                 // one AsyncStream drained by a single sequential writer rather
                 // than spawning a Task per message, which would not preserve order.
                 let (stream, continuation) = AsyncStream.makeStream(of: RemoteMessage.self)
-                streamer.attach(session: session) { message in continuation.yield(message) }
+                let connectionId = streamer.attach(session: session) { message in continuation.yield(message) }
                 let writer = Task {
                     for await message in stream { await sink.send(message) }
                 }
@@ -87,7 +91,7 @@ final class RemoteServer {
                         }
                     }
                 } catch {}
-                streamer.detach(session: session)
+                streamer.detach(connectionId: connectionId)
                 continuation.finish()
                 await writer.value
             })
@@ -102,7 +106,13 @@ final class RemoteServer {
 
         runTask = Task {
             do { try await application.runService() }
-            catch { await MainActor.run { self.startupError = error.localizedDescription } }
+            catch {
+                let message = error.localizedDescription
+                await MainActor.run {
+                    self.startupError = message
+                    self.onStartupError?(message)
+                }
+            }
         }
     }
 
@@ -143,6 +153,7 @@ private actor WebSocketSink {
         switch message {
         case let .resize(cols, rows): object = ["type": "resize", "cols": cols, "rows": rows]
         case let .data(vt): object = ["type": "data", "vt": vt]
+        case .ended: object = ["type": "ended"]
         }
         guard let data = try? JSONSerialization.data(withJSONObject: object),
               let text = String(data: data, encoding: .utf8) else { return }

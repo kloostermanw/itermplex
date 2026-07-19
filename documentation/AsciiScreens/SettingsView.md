@@ -34,6 +34,8 @@ section), "Periodic checks" (three steppers), "Ports" (two port fields), and
 │                                                    │
 │  Remote access (experimental)                     │
 │    ☐ Enable LAN remote terminal                    │
+│    (if the server failed to start:)               │
+│    ⚠ Server did not start: <reason>               │
 │    (when enabled:)                                 │
 │    http://192.168.1.20:7434/?token=abcd...         │
 │    ┌───────────┐                                   │
@@ -69,6 +71,9 @@ scheduler's next tick, no restart needed.
   restarts the affected server when a port changes.
 - `☐ Enable LAN remote terminal`: `Toggle(isOn: $store.remoteEnabled)`. Off by
   default. `ContentView` starts or stops `RemoteServer` in response.
+- `⚠ Server did not start`: shown only when `store.remoteStartupError` is set
+  (for example the port is already in use); it replaces the URL/QR until a
+  successful restart clears it.
 - The URL line and QR block appear only while the toggle is on and an active
   network interface exists. The URL is
   `http://<lan-ip>:<remotePort>/?token=<token>` (`LocalNetwork.primaryIPv4`,

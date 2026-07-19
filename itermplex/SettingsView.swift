@@ -25,6 +25,10 @@ struct SettingsView: View {
             }
             Section("Remote access (experimental)") {
                 Toggle("Enable LAN remote terminal", isOn: $store.remoteEnabled)
+                if let error = store.remoteStartupError {
+                    Label("Server did not start: \(error)", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(.red)
+                }
                 if store.remoteEnabled {
                     if let ip = LocalNetwork.primaryIPv4() {
                         let url = "http://\(ip):\(store.remotePort)/?token=\(store.remoteToken.value)"

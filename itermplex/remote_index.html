@@ -12,15 +12,38 @@
   #list button { display: block; width: 100%; text-align: left; padding: 10px; margin: 6px 0;
     background: #1c1c1e; color: #eee; border: 1px solid #333; border-radius: 8px; font-size: 15px; }
   #term { position: fixed; inset: 0; display: none; }
+  #status { position: fixed; left: 0; right: 0; top: 0; padding: 8px 12px; z-index: 10;
+    background: #3a2a00; color: #ffcf6b; font-size: 13px; text-align: center; display: none; }
+  #status button { margin-left: 10px; background: #5a4200; color: #ffe6a8;
+    border: 1px solid #7a5a00; border-radius: 6px; padding: 2px 8px; font-size: 12px; }
 </style>
 </head>
 <body>
+<div id="status"></div>
 <div id="list"></div>
 <div id="term"></div>
 <script src="/vendor/xterm.js"></script>
 <script>
 const params = new URLSearchParams(location.search);
 const token = params.get("token") || "";
+
+function showStatus(text, withBackButton) {
+  const status = document.getElementById("status");
+  status.textContent = text;
+  if (withBackButton) {
+    const back = document.createElement("button");
+    back.textContent = "Back to sessions";
+    back.onclick = () => location.reload();
+    status.appendChild(back);
+  }
+  status.style.display = "block";
+}
+
+function hideStatus() {
+  const status = document.getElementById("status");
+  status.style.display = "none";
+  status.textContent = "";
+}
 
 async function loadSessions() {
   const list = document.getElementById("list");
@@ -32,7 +55,13 @@ async function loadSessions() {
     return;
   }
   if (!res.ok) { list.textContent = "Unauthorized. Check the token in your link."; return; }
-  const workspaces = await res.json();
+  let workspaces;
+  try {
+    workspaces = await res.json();
+  } catch (e) {
+    list.textContent = "Unexpected response from itermplex.";
+    return;
+  }
   list.innerHTML = "";
   const heading = document.createElement("h1");
   heading.textContent = "itermplex sessions";
@@ -64,10 +93,22 @@ function attach(sessionId) {
   const url = proto + "//" + location.host + "/attach?session=" +
     encodeURIComponent(sessionId) + "&token=" + encodeURIComponent(token);
   const ws = new WebSocket(url);
+  let sessionEnded = false;
   ws.onmessage = (event) => {
     const msg = JSON.parse(event.data);
     if (msg.type === "resize") term.resize(msg.cols, msg.rows);
     else if (msg.type === "data") term.write(msg.vt);
+    else if (msg.type === "ended") {
+      sessionEnded = true;
+      showStatus("Session ended.", true);
+      ws.close();
+    }
+  };
+  ws.onerror = () => {
+    if (!sessionEnded) showStatus("Connection error.", true);
+  };
+  ws.onclose = () => {
+    if (!sessionEnded) showStatus("Disconnected. Check that itermplex is reachable and your link is current.", true);
   };
   term.onData((data) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ data }));

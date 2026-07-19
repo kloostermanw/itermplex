@@ -14,6 +14,14 @@ import Foundation
         #expect(token.value == first)   // stable across reads
     }
 
+    @Test func persistsTheTokenAcrossInstances() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let first = RemoteAccessToken(defaults: defaults).value
+        // A fresh instance over the same defaults reads the same persisted value.
+        #expect(RemoteAccessToken(defaults: defaults).value == first)
+        #expect(first.count == 32)   // 16 random bytes as lowercase hex
+    }
+
     @Test func regenerateChangesTheToken() {
         let token = store()
         let old = token.value

@@ -41,10 +41,30 @@ struct ScreenFrame: Equatable {
                       let fg = cell[1] as? Int,
                       let bg = cell[2] as? Int,
                       let bold = cell[3] as? Int else { return nil }
-                return ScreenCell(ch: ch, fg: fg, bg: bg, bold: bold != 0)
+                return ScreenCell(ch: ch, fg: normalizeColor(fg), bg: normalizeColor(bg), bold: bold != 0)
             }
         }
         return ScreenFrame(session: session, cols: cols, rows: rows,
                            cursorX: cursorX, cursorY: cursorY, lines: lines)
+    }
+
+    /// Returns the session id of a `"type":"detached"` line, or nil if the line
+    /// is not a detached notification. The daemon emits this when a session ends
+    /// or can no longer be streamed.
+    static func detachedSession(line: String) -> String? {
+        guard let data = line.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              root["type"] as? String == "detached",
+              let session = root["session"] as? String else {
+            return nil
+        }
+        return session
+    }
+
+    /// A color is either the terminal default (-1) or a 0...255 palette index.
+    /// Anything else (a bug or protocol drift in the daemon) collapses to the
+    /// default rather than flowing into a malformed `38;5;N` SGR sequence.
+    private static func normalizeColor(_ value: Int) -> Int {
+        (value >= 0 && value <= 255) ? value : -1
     }
 }
