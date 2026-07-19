@@ -87,11 +87,15 @@ connections and drive them from its own sidebar, without opening a browser.
 
 Settings has a "Remote connections" section, below "Remote access
 (experimental)". It lists the connections already added
-(`RemoteConnectionsStore`, persisted in `UserDefaults`), each row showing the
-connection's name and `host:port` with edit and delete buttons, and below the
-list a form to add a new one (name, host, port, token). The token here is the
-same shared token shown on the other Mac's "Remote access (experimental)"
-Settings section. Every add, edit, or delete immediately starts or stops the
+(`RemoteConnectionsStore`), each row showing the connection's name and
+`host:port` with edit and delete buttons, and below the list a form to add a
+new one (name, host, port, token). The token here is the same shared token
+shown on the other Mac's "Remote access (experimental)" Settings section.
+`RemoteConnectionsStore` splits persistence: name, host, and port are stored
+in `UserDefaults`, while each connection's token goes to the Keychain via a
+`SecretStore` (`KeychainSecretStore` in production, an in-memory stand-in in
+tests), keyed by the connection's id, so tokens are never written to disk in
+plaintext. Every add, edit, or delete immediately starts or stops the
 matching `RemoteWorkspaceStore` (`RemoteWorkspacesController.sync()`); there
 is no separate "connect" step.
 
