@@ -33,7 +33,10 @@ struct RemoteAccessToken {
 
     private static func randomToken() -> String {
         var bytes = [UInt8](repeating: 0, count: 16)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        if SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) != errSecSuccess {
+            // Fall back to the system RNG rather than emit an all-zero token.
+            bytes = (0..<16).map { _ in UInt8.random(in: .min ... .max) }
+        }
         return bytes.map { String(format: "%02x", $0) }.joined()
     }
 }

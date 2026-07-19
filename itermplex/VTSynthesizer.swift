@@ -43,7 +43,10 @@ final class VTSynthesizer {
             for (index, row) in frame.lines.enumerated() {
                 let old = index < previous.count ? previous[index] : nil
                 if old != row {
-                    vt += "\u{1B}[\(index + 1);1H\u{1B}[2K"   // go to row, clear it
+                    // Reset attributes before clearing so `[2K` erases with the
+                    // default background, not whatever SGR the last emission left
+                    // active (which would paint the cleared cells).
+                    vt += "\u{1B}[\(index + 1);1H\u{1B}[m\u{1B}[2K"   // go to row, reset, clear it
                     vt += Self.renderRow(row)
                 }
             }
