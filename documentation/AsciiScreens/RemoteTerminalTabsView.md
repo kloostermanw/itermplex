@@ -30,18 +30,18 @@ Legend:
   close (`x`) button. Hidden entirely when no tabs are open, replaced instead
   by a `ContentUnavailableView` ("No terminals open"). Clicking a pill sets
   `tabs.selected`; clicking `x` calls `tabs.close(tab)`.
-- Every open tab's `RemoteTerminalView` is kept mounted in a `ZStack` — only
+- Every open tab's `RemoteTerminalView` is kept mounted in a `ZStack`. Only
   the selected one is visible (`opacity`), the rest are hidden but still
   running. This is deliberate: switching tabs must not tear down the
-  underlying `RemoteTerminalConnection` or lose scrollback, only closing a
-  tab does (via SwiftUI removing it from the `ForEach`, which triggers
+  underlying `RemoteTerminalConnection` or lose scrollback. Only closing a
+  tab does that (via SwiftUI removing it from the `ForEach`, which triggers
   `RemoteTerminalView.dismantleNSView`).
 - `RemoteTerminalView`: an `NSViewRepresentable` around SwiftTerm's AppKit
   `TerminalView`. Its `Coordinator` is the `TerminalViewDelegate`; the only
   requirement wired to something is `send(source:data:)`, forwarded to
   `RemoteTerminalConnection.send(_:)`. The rest (`sizeChanged`,
   `setTerminalTitle`, `hostCurrentDirectoryUpdate`, `scrolled`,
-  `rangeChanged`) are no-ops — there's no local window chrome or host
+  `rangeChanged`) are no-ops, since there's no local window chrome or host
   directory to reflect.
 - `RemoteTerminalConnection`: opens `ws://host:port/attach?session=...` on
   `makeNSView`, closes it on `dismantleNSView`. Feeds incoming `{"type":
