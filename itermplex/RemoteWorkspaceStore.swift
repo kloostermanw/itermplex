@@ -12,6 +12,7 @@ final class RemoteWorkspaceStore {
 
     private var socket: URLSessionWebSocketTask?
     private var running = false
+    private var reconnectTask: Task<Void, Never>?
 
     init(connection: RemoteConnection) { self.connection = connection }
 
@@ -28,6 +29,8 @@ final class RemoteWorkspaceStore {
 
     func stop() {
         running = false
+        reconnectTask?.cancel()
+        reconnectTask = nil
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
     }
@@ -41,6 +44,10 @@ final class RemoteWorkspaceStore {
     }
 
     private func connect() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        socket?.cancel(with: .goingAway, reason: nil)
+        socket = nil
         guard running, let url = wsURL("control") else { return }
         state = .connecting
         let task = URLSession.shared.webSocketTask(with: url)
@@ -50,9 +57,10 @@ final class RemoteWorkspaceStore {
     }
 
     private func receive() {
-        socket?.receive { [weak self] result in
+        let task = socket
+        task?.receive { [weak self] result in
             Task { @MainActor in
-                guard let self, self.running else { return }
+                guard let self, self.running, task === self.socket else { return }
                 switch result {
                 case let .success(.string(text)): self.apply(snapshotText: text); self.receive()
                 case .success: self.receive()
@@ -67,7 +75,7 @@ final class RemoteWorkspaceStore {
         guard running else { return }
         state = .unreachable
         // Reconnect after a short backoff.
-        Task { @MainActor in
+        reconnectTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             if self.running { self.connect() }
         }
