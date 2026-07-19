@@ -6,6 +6,7 @@ struct itermplexApp: App {
     @State private var updates = UpdateService()
     @State private var remoteConnections: RemoteConnectionsStore
     @State private var remoteWorkspaces: RemoteWorkspacesController
+    @State private var remoteTerminalTabs = RemoteTerminalTabs()
 
     init() {
         let connections = RemoteConnectionsStore()
@@ -15,7 +16,8 @@ struct itermplexApp: App {
 
     var body: some Scene {
         Window("itermplex", id: "main") {
-            ContentView(store: store, remoteConnections: remoteConnections, remoteWorkspaces: remoteWorkspaces)
+            ContentView(store: store, remoteConnections: remoteConnections, remoteWorkspaces: remoteWorkspaces,
+                        remoteTerminalTabs: remoteTerminalTabs)
                 .preferredColorScheme(.dark)
                 .updateAlerts(updates)
                 .task {
@@ -38,6 +40,11 @@ struct itermplexApp: App {
                 ProcessLogWindow(store: store, id: id)
                     .preferredColorScheme(.dark)
             }
+        }
+
+        WindowGroup(id: "remote-terminal") {
+            RemoteTerminalTabsView(connections: remoteConnections, tabs: remoteTerminalTabs)
+                .preferredColorScheme(.dark)
         }
 
         Settings {

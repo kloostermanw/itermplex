@@ -5,6 +5,7 @@ struct ContentView: View {
     let store: ProjectStore
     let remoteConnections: RemoteConnectionsStore
     let remoteWorkspaces: RemoteWorkspacesController
+    let remoteTerminalTabs: RemoteTerminalTabs
     @Environment(\.openWindow) private var openWindow
     @State private var monitor: SessionMonitoring = ITermMonitor()
     @State private var mcpHost: MCPServerHost?
@@ -171,7 +172,7 @@ struct ContentView: View {
                         syncEnabled: true,
                         configChanged: false,
                         isLocalOnly: { _ in false },
-                        onActivate: { _ in }, // remote attach wired in Task 9
+                        onActivate: { openRemoteTerminal(remoteStore, $0) },
                         onRestartTerminal: { remoteStore.restart(sessionId: $0.sessionId) },
                         onRenameTerminal: { _ in },
                         onRemoveTerminal: { _ in },
@@ -311,5 +312,13 @@ struct ContentView: View {
 
     private func openProcessLog(_ process: ManagedProcess, in project: Project) {
         openWindow(id: "process-log", value: ProcessLogWindowID(projectId: project.id, name: process.name))
+    }
+
+    /// Opens (or focuses) a tab in the shared `remote-terminal` window for a
+    /// tapped remote session row, then brings that window forward.
+    private func openRemoteTerminal(_ remoteStore: RemoteWorkspaceStore, _ ref: TerminalRef) {
+        let tab = RemoteTerminalTabID(connectionId: remoteStore.connection.id, sessionId: ref.sessionId, title: ref.label)
+        remoteTerminalTabs.open(tab)
+        openWindow(id: "remote-terminal")
     }
 }

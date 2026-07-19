@@ -13,6 +13,9 @@ packages:
   HummingbirdWebSocket:
     url: https://github.com/hummingbird-project/hummingbird-websocket
     from: "2.2.0"
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    from: "1.2.0"
 targets:
   itermplex:
     type: application
@@ -25,6 +28,8 @@ targets:
         product: Hummingbird
       - package: HummingbirdWebSocket
         product: HummingbirdWebSocket
+      - package: SwiftTerm
+        product: SwiftTerm
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: eu.kloosterman.itermplex
