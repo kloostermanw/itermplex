@@ -2,6 +2,7 @@ import Testing
 import Foundation
 @testable import itermplex
 
+@MainActor
 @Suite struct SectionCollapseStateTests {
     @Test func persistsPerKey() {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
