@@ -3,8 +3,11 @@
 ASCII reference layout for `SettingsView`, kept in sync with the SwiftUI view
 so the intended structure stays readable without running the app.
 
-The view is a single `Form` with two sections: the badge toggle (unlabeled
-section) and "Periodic checks" (three steppers).
+The view is a single `Form` with five sections: the badge toggle (unlabeled
+section), "Periodic checks" (three steppers), "Ports" (two port fields),
+"Remote access (experimental)" (the LAN toggle plus URL and QR when enabled),
+and "Remote connections" (the list of other itermplex instances this one
+connects to, plus a form to add one).
 
 ```
 ┌──────────────────────────────────────────────────┐
@@ -23,6 +26,43 @@ section) and "Periodic checks" (three steppers).
 │    (collapsed vs expanded workspace, pending CI,   │
 │    attention). See documentation/periodic          │
 │    checks.md.                                      │
+│                                                    │
+│  Ports                                            │
+│    MCP server                        [  7433 ]    │
+│    Remote terminal                   [  7434 ]    │
+│    TCP ports for the loopback MCP server and the   │
+│    LAN remote terminal server. Changes take        │
+│    effect after the affected server restarts.      │
+│                                                    │
+│  Remote access (experimental)                     │
+│    ☐ Enable LAN remote terminal                    │
+│    (if the server failed to start:)               │
+│    ⚠ Server did not start: <reason>               │
+│    (when enabled:)                                 │
+│    http://192.168.1.20:7434/?token=abcd...         │
+│    ┌───────────┐                                   │
+│    │ ▚▚ QR ▚▚ │  140 x 140                         │
+│    └───────────┘                                   │
+│    Serves a browser terminal to other devices on   │
+│    your local network. Anyone with this URL can    │
+│    read and type into your sessions. Traffic is    │
+│    unencrypted, so use it only on trusted          │
+│    networks.                                        │
+│                                                    │
+│  Remote connections                               │
+│    Office Mac                          (✎) (🗑)   │
+│    192.168.1.20:7434                              │
+│    Home Mac                            (✎) (🗑)   │
+│    10.0.0.5:7434                                  │
+│    [ Name____________ ]                            │
+│    [ Host____________ ]                            │
+│    [ Port__ ]                                      │
+│    [ Token___________ ]                            │
+│    [ Add connection ]                              │
+│    Connect to another Mac running itermplex with   │
+│    its LAN remote terminal enabled. Enter the      │
+│    host, port, and token shown in that Mac's       │
+│    Settings.                                       │
 └──────────────────────────────────────────────────┘
 ```
 
@@ -41,3 +81,30 @@ Legend:
 Changing a value updates `ProjectStore.checkIntervals` directly (the property
 clamps and persists on set), so the new interval takes effect on the
 scheduler's next tick, no restart needed.
+
+- `MCP server` / `Remote terminal`: two `TextField`s (`SettingsView.portField`)
+  bound to `$store.mcpPort` and `$store.remotePort`. Each value is clamped to
+  `ProjectStore.portRange` (1024 to 65535) and persisted on set. `ContentView`
+  restarts the affected server when a port changes.
+- `☐ Enable LAN remote terminal`: `Toggle(isOn: $store.remoteEnabled)`. Off by
+  default. `ContentView` starts or stops `RemoteServer` in response.
+- `⚠ Server did not start`: shown only when `store.remoteStartupError` is set
+  (for example the port is already in use); it replaces the URL/QR until a
+  successful restart clears it.
+- The URL line and QR block appear only while the toggle is on and an active
+  network interface exists. The URL is
+  `http://<lan-ip>:<remotePort>/?token=<token>` (`LocalNetwork.primaryIPv4`,
+  `ProjectStore.remoteToken`); the QR encodes the same URL (`QRCode.image`).
+- "Remote connections": one row per `remoteConnections.connections`
+  (`SettingsView.RemoteConnectionRow`), each showing the connection's name and
+  `host:port` with edit (✎) and delete (🗑) buttons. Editing swaps the row for
+  an inline name/host/port/token form with Cancel and Save; Save is disabled
+  until name, host, and a valid port are present. Below the list, a form adds
+  a new connection (`SettingsView.addConnection`); "Add connection" is
+  disabled until name, host, port, and token are all filled in. Every
+  add/edit/delete calls the matching `RemoteConnectionsStore` method and then
+  `remoteWorkspaces.sync()`, which starts or stops the corresponding
+  `RemoteWorkspaceStore` in `ContentView`'s sidebar.
+
+See documentation/remote-access.md for the full feature description and the
+security caveat.

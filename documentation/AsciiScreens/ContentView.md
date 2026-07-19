@@ -6,14 +6,22 @@ running the app.
 
 ## Window
 
-`ContentView` is a vertical scroll view. `SidebarHeaderView` sits at the top,
-followed by one `WorkspaceCardView` per project with a `Divider` between cards. A
-trailing empty drop zone accepts a card dragged to the end of the list. Cards are
-draggable to reorder.
+`ContentView` is a vertical scroll view made of one **Local** section followed
+by one **Remote** section per connection in `remoteConnections.connections`
+(each backed by a live `RemoteWorkspaceStore` from `remoteWorkspaces.stores`).
+Each section starts with a `SidebarSectionHeaderView` and, unless collapsed
+(`sections: SectionCollapseState`, keyed `"local"` / `"remote-<connection id>"`),
+lists one `WorkspaceCardView` per project with a `Divider` between cards. Only
+the Local section has the trailing drop zone and drag-to-reorder support; a
+Remote section instead shows a state line ("Connecting…", "Unreachable.
+Retrying…", "Unauthorized: check the connection's token.") in place of cards
+whenever that connection isn't `.connected`. When a remote action (open,
+restart, or close) is rejected by the server, that section also shows a small
+red caption from `store.lastActionError`, so the failure is visible.
 
 ```
 ┌───────────────────────────────────────────────────────────────────┐
-│                                                       ( ⟳ )  ( + )  │  SidebarHeaderView
+│ ▾ Local                                              ( ⟳ )  ( + )  │  SidebarSectionHeaderView
 ├───────────────────────────────────────────────────────────────────┤
 │ ▾ laravel-test                       origin/develop           ↑1 ↓0 │  WorkspaceCardView
 │                                      origin/feature/issue-15   ↑1 ↓0 │
@@ -25,18 +33,44 @@ draggable to reorder.
 │ ▸ api-service                                                       │  WorkspaceCardView (collapsed)
 │                                                                     │
 │                       (drop zone: drag a card here to move to end)  │
+├───────────────────────────────────────────────────────────────────┤
+│ ▾ Office Mac                                         ( ⟳ )  ( - )  │  SidebarSectionHeaderView (remote)
+├───────────────────────────────────────────────────────────────────┤
+│ ▾ web-app                             origin/main             ↑0 ↓2 │  WorkspaceCardView (remote)
+│   │  > Terminal 1                                                   │
+├───────────────────────────────────────────────────────────────────┤
+│ ▾ Home Mac                                                          │
+│   Unreachable. Retrying…                                            │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
 Legend:
 
-- `SidebarHeaderView`: title, workspace count, refresh and add buttons.
+- `SidebarSectionHeaderView`: one per section, title, chevron, and trailing
+  icon buttons. Local: refresh git status, add a project folder. Remote:
+  reconnect (`store.stop(); store.start()`), remove connection
+  (`remoteConnections.remove(id:)` then `remoteWorkspaces.sync()`). See
+  `SidebarSectionHeaderView`.
 - `WorkspaceCardView`: one per project, expanded or collapsed. See
-  `WorkspaceCardView.md`.
-- `Divider`: drawn between cards, not after the last one.
-- Drop zone: a `Color.clear` region at the bottom that accepts a dragged card to
-  move it to the end.
+  `WorkspaceCardView.md`. Remote cards feed data from
+  `RemoteWorkspaceStore.workspaces` (`DecodedRemoteWorkspaces`); actions that
+  have no remote equivalent (rename, remove terminal, remove project, enable
+  sync, apply config, process controls) are wired to no-ops. Tapping a remote
+  terminal row (`onActivate`) calls `openRemoteTerminal(remoteStore, ref)`,
+  which opens (or focuses an existing) tab in the shared `remote-terminal`
+  window for `(remoteStore.connection.id, ref.sessionId, ref.label)` and
+  brings that window forward. See `RemoteTerminalTabsView.md`.
+- `Divider`: drawn between cards, not after the last one, in both Local and
+  Remote sections.
+- Drop zone: a `Color.clear` region at the bottom of the Local section that
+  accepts a dragged card to move it to the end. Remote sections don't support
+  reordering.
 - `minWidth: 240`: the sidebar has a minimum width.
+- Collapse state (both the section chevron and each remote card's own chevron)
+  is `@State` in `ContentView`; section collapse persists via
+  `SectionCollapseState` (`UserDefaults`), per-card collapse for remote
+  projects is in-memory only for this window's lifetime (local project cards
+  persist their collapse through `ProjectStore.toggleCollapsed`).
 
 ## Overlays and alerts
 

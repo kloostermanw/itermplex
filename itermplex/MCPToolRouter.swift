@@ -221,6 +221,8 @@ final class MCPToolRouter {
 
     // MARK: - Serialization
 
+    private var serializer: WorkspaceSerializer { WorkspaceSerializer(store: store) }
+
     private func projectSummary(_ project: Project) -> JSONValue {
         .object([
             "id": .string(project.id.uuidString),
@@ -233,55 +235,20 @@ final class MCPToolRouter {
     }
 
     private func projectDetail(_ project: Project) -> JSONValue {
-        guard case var .object(members) = projectSummary(project) else {
-            return projectSummary(project)
-        }
-        members["terminals"] = .array(project.terminals.map { terminalJSON($0, in: project) })
-        if let info = store.gitInfo[project.id] { members["git"] = gitJSON(info) }
+        // Preserve the summary fields MCP adds on top of the shared shape.
+        guard case var .object(members) = serializer.workspace(project) else { return serializer.workspace(project) }
+        members["path"] = .string(project.url.path)
+        members["is_git_repository"] = .bool(project.isGitRepository)
+        members["terminal_count"] = .int(project.terminals.count)
+        members["selected"] = .bool(project.id == selectedProjectId)
         return .object(members)
     }
 
     private func terminalJSON(_ ref: TerminalRef, in project: Project) -> JSONValue {
-        var members: [String: JSONValue] = [
-            "id": .string(ref.id.uuidString),
-            "session_id": .string(ref.sessionId),
-            "label": .string(ref.label),
-            "kind": .string(ref.kind.rawValue),
-            "run_state": .string(store.runState(for: ref) == .running ? "running" : "exited"),
-            "needs_attention": .bool(store.attention.contains(ref.id)),
-            "project_id": .string(project.id.uuidString),
-            "project_name": .string(project.name),
-        ]
-        if let job = store.jobNames[ref.id] { members["job_name"] = .string(job) }
-        return .object(members)
-    }
-
-    private func gitJSON(_ info: GitInfo) -> JSONValue {
-        var members: [String: JSONValue] = [
-            "branch": .string(info.branch),
-            "ahead": .int(info.ahead),
-            "behind": .int(info.behind),
-            "has_upstream": .bool(info.hasUpstream),
-        ]
-        if info.hasBase {
-            members["base_ahead"] = .int(info.baseAhead)
-            members["base_behind"] = .int(info.baseBehind)
-        }
-        if let number = info.issueNumber { members["issue_number"] = .int(number) }
-        if let number = info.prNumber { members["pr_number"] = .int(number) }
-        if let url = info.issueURL { members["issue_url"] = .string(url.absoluteString) }
-        if let url = info.prURL { members["pr_url"] = .string(url.absoluteString) }
-        if let checks = info.checks {
-            members["checks"] = .object([
-                "passing": .int(checks.passing),
-                "failing": .int(checks.failing),
-                "cancelled": .int(checks.cancelled),
-                "skipped": .int(checks.skipped),
-                "pending": .int(checks.pending),
-                "summary": .string(checks.summaryText),
-            ])
-        }
-        return .object(members)
+        WorkspaceSerializer.terminal(ref, projectId: project.id, projectName: project.name,
+                                     runState: store.runState(for: ref),
+                                     needsAttention: store.attention.contains(ref.id),
+                                     jobName: store.jobNames[ref.id])
     }
 
     // MARK: - Tool catalog

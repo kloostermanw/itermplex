@@ -4,10 +4,20 @@ import SwiftUI
 struct itermplexApp: App {
     @State private var store = ProjectStore()
     @State private var updates = UpdateService()
+    @State private var remoteConnections: RemoteConnectionsStore
+    @State private var remoteWorkspaces: RemoteWorkspacesController
+    @State private var remoteTerminalTabs = RemoteTerminalTabs()
+
+    init() {
+        let connections = RemoteConnectionsStore()
+        _remoteConnections = State(initialValue: connections)
+        _remoteWorkspaces = State(initialValue: RemoteWorkspacesController(connections: connections))
+    }
 
     var body: some Scene {
         Window("itermplex", id: "main") {
-            ContentView(store: store)
+            ContentView(store: store, remoteConnections: remoteConnections, remoteWorkspaces: remoteWorkspaces,
+                        remoteTerminalTabs: remoteTerminalTabs)
                 .preferredColorScheme(.dark)
                 .updateAlerts(updates)
                 .task {
@@ -32,8 +42,13 @@ struct itermplexApp: App {
             }
         }
 
+        WindowGroup(id: "remote-terminal") {
+            RemoteTerminalTabsView(connections: remoteConnections, tabs: remoteTerminalTabs)
+                .preferredColorScheme(.dark)
+        }
+
         Settings {
-            SettingsView(store: store)
+            SettingsView(store: store, remoteConnections: remoteConnections, remoteWorkspaces: remoteWorkspaces)
         }
     }
 }

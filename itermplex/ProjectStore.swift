@@ -30,6 +30,12 @@ final class ProjectStore {
     private(set) var attention: Set<UUID> = []
     private(set) var jobNames: [UUID: String] = [:]
 
+    /// Subscribers to `workspaceChanges()`, keyed by subscription id.
+    private var changeSubscribers: [UUID: AsyncStream<Void>.Continuation] = [:]
+    /// Whether `armChangeTracking()` currently has an active `withObservationTracking`
+    /// registration pending; avoids re-arming redundantly.
+    private var changeTrackingArmed = false
+
     /// Terminal ids that are tracked locally but absent from the on-disk config
     /// (kept alive after an external removal). Cleared when the config is written.
     private(set) var localOnlyTerminals: Set<UUID> = []
@@ -66,6 +72,12 @@ final class ProjectStore {
     private let storageKey = "itermplex.projects.bookmarks"
     private let badgeKey = "itermplex.showWorkspaceBadge"
     private let intervalsKey = "itermplex.checkIntervals"
+    private let remoteEnabledKey = "itermplex.remote.enabled"
+    private let mcpPortKey = "itermplex.mcpPort"
+    private let remotePortKey = "itermplex.remotePort"
+
+    /// Allowed range for the configurable server ports (unprivileged, valid TCP).
+    static let portRange = 1024...65535
     private var refreshTask: Task<Void, Never>?
     private var schedule = CheckSchedule()
 
@@ -93,6 +105,48 @@ final class ProjectStore {
             guard checkIntervals != oldValue else { return }
             defaults.set([checkIntervals.fast, checkIntervals.normal, checkIntervals.slow], forKey: intervalsKey)
         }
+    }
+
+    /// Whether the opt-in LAN remote terminal server runs. Off by default and
+    /// persisted. `ContentView` starts/stops `RemoteServer` in response.
+    var remoteEnabled: Bool {
+        didSet {
+            guard remoteEnabled != oldValue else { return }
+            defaults.set(remoteEnabled, forKey: remoteEnabledKey)
+        }
+    }
+
+    /// Port for the loopback MCP server. Clamped to `portRange` and persisted.
+    /// Changing it takes effect when the MCP host is next (re)started.
+    var mcpPort: Int {
+        didSet {
+            let clamped = Self.clampPort(mcpPort)
+            if clamped != mcpPort { mcpPort = clamped; return }
+            guard mcpPort != oldValue else { return }
+            defaults.set(mcpPort, forKey: mcpPortKey)
+        }
+    }
+
+    /// Port for the LAN remote terminal server. Clamped to `portRange` and
+    /// persisted. Changing it takes effect when the server is next (re)started.
+    var remotePort: Int {
+        didSet {
+            let clamped = Self.clampPort(remotePort)
+            if clamped != remotePort { remotePort = clamped; return }
+            guard remotePort != oldValue else { return }
+            defaults.set(remotePort, forKey: remotePortKey)
+        }
+    }
+
+    /// The shared secret required on every remote request and socket.
+    let remoteToken: RemoteAccessToken
+
+    /// Last error from starting the remote server (e.g. the port is in use), or
+    /// nil when it started cleanly. Shown in Settings; not persisted.
+    var remoteStartupError: String?
+
+    private static func clampPort(_ port: Int) -> Int {
+        min(max(port, portRange.lowerBound), portRange.upperBound)
     }
 
     private struct StoredProject: Codable {
@@ -148,7 +202,52 @@ final class ProjectStore {
         } else {
             self.checkIntervals = .default
         }
+        self.remoteEnabled = defaults.bool(forKey: remoteEnabledKey)
+        let storedMCPPort = defaults.integer(forKey: mcpPortKey)
+        self.mcpPort = storedMCPPort == 0 ? MCPServerHost.defaultPort : Self.clampPort(storedMCPPort)
+        let storedRemotePort = defaults.integer(forKey: remotePortKey)
+        self.remotePort = storedRemotePort == 0 ? RemoteServer.defaultPort : Self.clampPort(storedRemotePort)
+        self.remoteToken = RemoteAccessToken(defaults: defaults)
         load()
+    }
+
+    /// Registers a new subscriber for the coalesced workspace change signal. The
+    /// returned stream yields once per change to `projects`, `gitInfo`, `attention`,
+    /// or `jobNames`, letting a caller (e.g. the remote control channel) push a
+    /// fresh snapshot without polling. Call `cancelWorkspaceChanges(_:)` with the
+    /// returned id when done to release the subscription.
+    func workspaceChanges() -> (id: UUID, stream: AsyncStream<Void>) {
+        let id = UUID()
+        let stream = AsyncStream<Void> { continuation in
+            changeSubscribers[id] = continuation
+        }
+        if !changeTrackingArmed { changeTrackingArmed = true; armChangeTracking() }
+        return (id, stream)
+    }
+
+    /// Unregisters a subscription previously created by `workspaceChanges()`.
+    func cancelWorkspaceChanges(_ id: UUID) {
+        changeSubscribers[id]?.finish()
+        changeSubscribers[id] = nil
+    }
+
+    /// Observes the store's own sidebar-relevant properties. `withObservationTracking`
+    /// fires `onChange` once when any accessed property next mutates; re-arm to keep
+    /// observing. This turns Observation into a broadcast signal without editing
+    /// every mutation site.
+    private func armChangeTracking() {
+        withObservationTracking {
+            _ = projects
+            _ = gitInfo
+            _ = attention
+            _ = jobNames
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                for continuation in self.changeSubscribers.values { continuation.yield(()) }
+                if !self.changeSubscribers.isEmpty { self.armChangeTracking() } else { self.changeTrackingArmed = false }
+            }
+        }
     }
 
     func addProject(url: URL) {
