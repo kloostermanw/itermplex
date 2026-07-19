@@ -181,7 +181,14 @@ final class RemoteServer {
     // MARK: - Helpers
 
     private nonisolated static func tokenOK(_ request: Request, expected: String) -> Bool {
-        query(request, "token") == expected
+        isAuthorized(token: query(request, "token"), expected: expected)
+    }
+
+    /// Pure comparison at the heart of the LAN control server's auth boundary.
+    /// A missing/empty `expected` token must never be satisfied by a missing
+    /// or empty client token, so this rejects unconditionally in that case.
+    nonisolated static func isAuthorized(token: String?, expected: String) -> Bool {
+        !expected.isEmpty && token == expected
     }
 
     private nonisolated static func query(_ request: Request, _ name: String) -> String? {
