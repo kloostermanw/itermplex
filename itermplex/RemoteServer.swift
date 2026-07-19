@@ -141,12 +141,14 @@ final class RemoteServer {
                         if pending { continue }
                         pending = true
                         try? await Task.sleep(nanoseconds: 250_000_000)
-                        pending = false
                         try? await outbound.write(.text(await snapshotJSON()))
+                        pending = false
                     }
                 }
                 // Keep the socket open; ignore any inbound frames.
-                for try await _ in inbound.messages(maxSize: 1 << 16) {}
+                do {
+                    for try await _ in inbound.messages(maxSize: 1 << 16) {}
+                } catch {}
                 writer.cancel()
                 await MainActor.run { store.cancelWorkspaceChanges(subId) }
             })
