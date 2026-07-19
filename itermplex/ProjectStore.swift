@@ -66,6 +66,12 @@ final class ProjectStore {
     private let storageKey = "itermplex.projects.bookmarks"
     private let badgeKey = "itermplex.showWorkspaceBadge"
     private let intervalsKey = "itermplex.checkIntervals"
+    private let remoteEnabledKey = "itermplex.remote.enabled"
+    private let mcpPortKey = "itermplex.mcpPort"
+    private let remotePortKey = "itermplex.remotePort"
+
+    /// Allowed range for the configurable server ports (unprivileged, valid TCP).
+    static let portRange = 1024...65535
     private var refreshTask: Task<Void, Never>?
     private var schedule = CheckSchedule()
 
@@ -93,6 +99,44 @@ final class ProjectStore {
             guard checkIntervals != oldValue else { return }
             defaults.set([checkIntervals.fast, checkIntervals.normal, checkIntervals.slow], forKey: intervalsKey)
         }
+    }
+
+    /// Whether the opt-in LAN remote terminal server runs. Off by default and
+    /// persisted. `ContentView` starts/stops `RemoteServer` in response.
+    var remoteEnabled: Bool {
+        didSet {
+            guard remoteEnabled != oldValue else { return }
+            defaults.set(remoteEnabled, forKey: remoteEnabledKey)
+        }
+    }
+
+    /// Port for the loopback MCP server. Clamped to `portRange` and persisted.
+    /// Changing it takes effect when the MCP host is next (re)started.
+    var mcpPort: Int {
+        didSet {
+            let clamped = Self.clampPort(mcpPort)
+            if clamped != mcpPort { mcpPort = clamped; return }
+            guard mcpPort != oldValue else { return }
+            defaults.set(mcpPort, forKey: mcpPortKey)
+        }
+    }
+
+    /// Port for the LAN remote terminal server. Clamped to `portRange` and
+    /// persisted. Changing it takes effect when the server is next (re)started.
+    var remotePort: Int {
+        didSet {
+            let clamped = Self.clampPort(remotePort)
+            if clamped != remotePort { remotePort = clamped; return }
+            guard remotePort != oldValue else { return }
+            defaults.set(remotePort, forKey: remotePortKey)
+        }
+    }
+
+    /// The shared secret required on every remote request and socket.
+    let remoteToken: RemoteAccessToken
+
+    private static func clampPort(_ port: Int) -> Int {
+        min(max(port, portRange.lowerBound), portRange.upperBound)
     }
 
     private struct StoredProject: Codable {
@@ -148,6 +192,12 @@ final class ProjectStore {
         } else {
             self.checkIntervals = .default
         }
+        self.remoteEnabled = defaults.bool(forKey: remoteEnabledKey)
+        let storedMCPPort = defaults.integer(forKey: mcpPortKey)
+        self.mcpPort = storedMCPPort == 0 ? MCPServerHost.defaultPort : Self.clampPort(storedMCPPort)
+        let storedRemotePort = defaults.integer(forKey: remotePortKey)
+        self.remotePort = storedRemotePort == 0 ? RemoteServer.defaultPort : Self.clampPort(storedRemotePort)
+        self.remoteToken = RemoteAccessToken(defaults: defaults)
         load()
     }
 
