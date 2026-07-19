@@ -18,6 +18,7 @@ final class ITermScreenStreamer: @unchecked Sendable {
     private var stdinHandle: FileHandle?
     private var readHandle: FileHandle?
     private var stopped = false
+    private var launching = false
     private var buffer = Data()
 
     // Per attached session: its synthesizer (frame state) and message sink.
@@ -45,12 +46,29 @@ final class ITermScreenStreamer: @unchecked Sendable {
         stopped = false
         synthesizers[session] = VTSynthesizer()
         sinks[session] = onMessage
-        let needsLaunch = process == nil
         lock.unlock()
-        if needsLaunch {
-            DispatchQueue.global().async { [weak self] in self?.launch() }
-        }
+        launchIfNeeded()
         writeCommand(["cmd": "attach", "session": session])
+    }
+
+    /// Launches the daemon at most once: only when no process is live and no
+    /// launch is already in flight. This guards against concurrent `attach`
+    /// calls (or a relaunch racing a live process) spawning duplicate daemons.
+    private func launchIfNeeded() {
+        lock.lock()
+        guard process == nil, !launching, !stopped, !sinks.isEmpty else {
+            lock.unlock()
+            return
+        }
+        launching = true
+        lock.unlock()
+        DispatchQueue.global().async { [weak self] in self?.launch() }
+    }
+
+    private func clearLaunching() {
+        lock.lock()
+        launching = false
+        lock.unlock()
     }
 
     func detach(session: String) {
@@ -70,6 +88,7 @@ final class ITermScreenStreamer: @unchecked Sendable {
     func stop() {
         lock.lock()
         stopped = true
+        launching = false
         let running = process
         let handle = readHandle
         process = nil
@@ -95,6 +114,7 @@ final class ITermScreenStreamer: @unchecked Sendable {
               let python = try? pythonEnvironment.ensureInterpreter(),
               let script = Bundle.main.url(forResource: "iterm_streamer", withExtension: "py"),
               let cookie = requestCookie() else {
+            clearLaunching()
             return  // silently inactive
         }
         let process = Process()
@@ -112,12 +132,13 @@ final class ITermScreenStreamer: @unchecked Sendable {
         outPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             self?.consume(handle.availableData)
         }
-        process.terminationHandler = { [weak self] _ in self?.scheduleRelaunch() }
+        process.terminationHandler = { [weak self] proc in self?.handleTermination(of: proc) }
 
-        do { try process.run() } catch { return }
+        do { try process.run() } catch { clearLaunching(); return }
 
         lock.lock()
         if stopped {
+            launching = false
             lock.unlock()
             outPipe.fileHandleForReading.readabilityHandler = nil
             process.terminate()
@@ -131,11 +152,26 @@ final class ITermScreenStreamer: @unchecked Sendable {
         self.stdinHandle = inPipe.fileHandleForWriting
         self.readHandle = outPipe.fileHandleForReading
         self.buffer = Data()
+        launching = false
         // Re-attach any sessions requested before the process was ready.
         let sessions = Array(sinks.keys)
         lock.unlock()
         staleHandle?.readabilityHandler = nil
         for session in sessions { writeCommand(["cmd": "attach", "session": session]) }
+    }
+
+    /// Clears the current process's state when it exits, then relaunches if
+    /// sessions are still attached. Ignores a stale handler firing for a
+    /// process that has already been replaced.
+    private func handleTermination(of proc: Process) {
+        lock.lock()
+        guard process === proc else { lock.unlock(); return }
+        readHandle?.readabilityHandler = nil
+        process = nil
+        stdinHandle = nil
+        readHandle = nil
+        lock.unlock()
+        scheduleRelaunch()
     }
 
     private func consume(_ data: Data) {
@@ -166,12 +202,11 @@ final class ITermScreenStreamer: @unchecked Sendable {
         let done = stopped || sinks.isEmpty
         lock.unlock()
         guard !done else { return }
+        // Backoff before relaunch so a persistently failing daemon does not
+        // spin. `launchIfNeeded` no-ops if a process is already live or another
+        // launch is in flight.
         DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [weak self] in
-            guard let self else { return }
-            self.lock.lock()
-            let stillWanted = !self.stopped && !self.sinks.isEmpty
-            self.lock.unlock()
-            if stillWanted { self.launch() }
+            self?.launchIfNeeded()
         }
     }
 

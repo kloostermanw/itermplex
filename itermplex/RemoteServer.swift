@@ -68,8 +68,14 @@ final class RemoteServer {
             onUpgrade: { inbound, outbound, context in
                 guard let session = Self.query(context.request, "session") else { return }
                 let sink = WebSocketSink(outbound: outbound)
-                streamer.attach(session: session) { message in
-                    Task { await sink.send(message) }
+                // Frames must reach the socket in the order the streamer emits
+                // them (a VT byte stream is order critical). Funnel them through
+                // one AsyncStream drained by a single sequential writer rather
+                // than spawning a Task per message, which would not preserve order.
+                let (stream, continuation) = AsyncStream.makeStream(of: RemoteMessage.self)
+                streamer.attach(session: session) { message in continuation.yield(message) }
+                let writer = Task {
+                    for await message in stream { await sink.send(message) }
                 }
                 do {
                     for try await frame in inbound.messages(maxSize: 1 << 20) {
@@ -82,6 +88,8 @@ final class RemoteServer {
                     }
                 } catch {}
                 streamer.detach(session: session)
+                continuation.finish()
+                await writer.value
             })
 
         let application = Application(

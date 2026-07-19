@@ -52,8 +52,25 @@ import Testing
                                  lines: [[ScreenCell(ch: "a", fg: -1, bg: -1, bold: false)],
                                          [ScreenCell(ch: "c", fg: -1, bg: -1, bold: false)]])
         let out = s.render(second)
-        // Move to row 2, clear the line, rewrite it, then reposition cursor.
-        #expect(out.vt == "\u{1B}[2;1H\u{1B}[2K\u{1B}[39;49mc\u{1B}[2;1H")
+        // Move to row 2, reset attrs, clear the line, rewrite it, reposition cursor.
+        #expect(out.vt == "\u{1B}[2;1H\u{1B}[m\u{1B}[2K\u{1B}[39;49mc\u{1B}[2;1H")
         #expect(!out.vt.contains("\u{1B}[2J"))   // no full clear
+    }
+
+    @Test func changedRowClearDoesNotLeakPriorBackground() {
+        let s = VTSynthesizer()
+        // Row 0 carries a non-default background, so the last SGR the client
+        // holds before the next frame sets bg 4. Row 1 then changes.
+        let first = ScreenFrame(session: "s", cols: 1, rows: 2, cursorX: 0, cursorY: 0,
+                                lines: [[ScreenCell(ch: "a", fg: -1, bg: 4, bold: false)],
+                                        [ScreenCell(ch: "b", fg: -1, bg: -1, bold: false)]])
+        _ = s.render(first)
+        let second = ScreenFrame(session: "s", cols: 1, rows: 2, cursorX: 0, cursorY: 0,
+                                 lines: [[ScreenCell(ch: "a", fg: -1, bg: 4, bold: false)],
+                                         [ScreenCell(ch: "c", fg: -1, bg: -1, bold: false)]])
+        let out = s.render(second)
+        // The clear must be preceded by an attribute reset so the erased cells
+        // use the default background, not the leftover bg 4.
+        #expect(out.vt.hasPrefix("\u{1B}[2;1H\u{1B}[m\u{1B}[2K"))
     }
 }
