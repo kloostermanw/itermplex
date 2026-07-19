@@ -9,6 +9,9 @@ final class RemoteWorkspaceStore {
     let connection: RemoteConnection
     private(set) var state: RemoteConnectionState = .connecting
     private(set) var workspaces = DecodedRemoteWorkspaces()
+    /// Set when the most recent action POST failed (non-2xx response or a transport
+    /// error); cleared as soon as an action succeeds (2xx).
+    private(set) var lastActionError: String?
 
     private var socket: URLSessionWebSocketTask?
     private var running = false
@@ -94,17 +97,32 @@ final class RemoteWorkspaceStore {
         }
     }
 
-    // MARK: - Actions (best effort; failures are ignored, next snapshot reconciles)
+    // MARK: - Actions (fire-and-forget UI-wise, but failures surface via `lastActionError`)
 
     func openTerminal(workspaceId: UUID) { post("api/workspaces/\(workspaceId.uuidString)/terminal") }
     func openClaude(workspaceId: UUID) { post("api/workspaces/\(workspaceId.uuidString)/claude") }
     func restart(sessionId: String) { post("api/sessions/\(sessionId)/restart") }
     func close(sessionId: String) { post("api/sessions/\(sessionId)/close") }
 
+    /// Pure mapping from a POST outcome to a short, user-facing error message.
+    /// `nil` means the action succeeded (2xx status, no transport error).
+    static func actionErrorMessage(status: Int?, hadTransportError: Bool) -> String? {
+        if hadTransportError { return "Action failed: could not reach the remote." }
+        guard let status else { return "Action failed: could not reach the remote." }
+        guard (200...299).contains(status) else { return "Action failed (\(status))." }
+        return nil
+    }
+
     private func post(_ path: String) {
         guard let url = URL(string: "\(baseURL)/\(path)?token=\(connection.token)") else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        URLSession.shared.dataTask(with: request).resume()
+        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
+            let status = (response as? HTTPURLResponse)?.statusCode
+            let message = Self.actionErrorMessage(status: status, hadTransportError: error != nil)
+            Task { @MainActor in
+                self?.lastActionError = message
+            }
+        }.resume()
     }
 }
