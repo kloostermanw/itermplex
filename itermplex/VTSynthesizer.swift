@@ -11,9 +11,12 @@ struct VTOutput: Equatable {
 }
 
 /// Converts iTerm2 screen frames into a terminal (VT) byte stream for xterm.js.
-/// Holds the last dimensions so it only reports a resize when they change.
-/// This produces a full redraw on every frame; line-level diffing is added in a
-/// later task.
+/// Holds the last dimensions and the last rendered grid so it reports a resize
+/// only when dimensions change and, on subsequent frames of the same size,
+/// rewrites only the rows that differ. The first frame (or a dimension change)
+/// forces a full redraw.
+///
+/// Not thread-safe: one instance per session, called serially.
 final class VTSynthesizer {
     private var lastCols: Int?
     private var lastRows: Int?
@@ -76,8 +79,10 @@ final class VTSynthesizer {
     }
 
     static func sgr(for cell: ScreenCell) -> String {
-        var codes: [String] = []
-        if cell.bold { codes.append("1") }
+        // Emit the bold state explicitly on every cell (1 on, 22 off), the same
+        // way fg/bg always emit 39/49. Otherwise a bold-to-non-bold transition
+        // would leave bold active for the rest of the row (39/49 do not clear it).
+        var codes: [String] = [cell.bold ? "1" : "22"]
         codes.append(cell.fg < 0 ? "39" : "38;5;\(cell.fg)")
         codes.append(cell.bg < 0 ? "49" : "48;5;\(cell.bg)")
         return "\u{1B}[\(codes.joined(separator: ";"))m"

@@ -13,8 +13,8 @@ import Testing
                                     ScreenCell(ch: "i", fg: -1, bg: -1, bold: false)]],
                                  cols: 2, rows: 1, cx: 2, cy: 0))
         #expect(out.resize == VTResize(cols: 2, rows: 1))
-        // Reset + clear + home, "hi", then cursor to row 1 col 3 (1-based).
-        #expect(out.vt == "\u{1B}[0m\u{1B}[2J\u{1B}[H\u{1B}[39;49mhi\u{1B}[1;3H")
+        // Reset + clear + home, "hi" (bold off, default fg/bg), cursor to row 1 col 3.
+        #expect(out.vt == "\u{1B}[0m\u{1B}[2J\u{1B}[H\u{1B}[22;39;49mhi\u{1B}[1;3H")
     }
 
     @Test func emitsPaletteColorAndBoldSGR() {
@@ -53,8 +53,18 @@ import Testing
                                          [ScreenCell(ch: "c", fg: -1, bg: -1, bold: false)]])
         let out = s.render(second)
         // Move to row 2, reset attrs, clear the line, rewrite it, reposition cursor.
-        #expect(out.vt == "\u{1B}[2;1H\u{1B}[m\u{1B}[2K\u{1B}[39;49mc\u{1B}[2;1H")
+        #expect(out.vt == "\u{1B}[2;1H\u{1B}[m\u{1B}[2K\u{1B}[22;39;49mc\u{1B}[2;1H")
         #expect(!out.vt.contains("\u{1B}[2J"))   // no full clear
+    }
+
+    @Test func boldToNonBoldTransitionWithinRowResetsBold() {
+        let s = VTSynthesizer()
+        let out = s.render(frame([[ScreenCell(ch: "A", fg: -1, bg: -1, bold: true),
+                                    ScreenCell(ch: "B", fg: -1, bg: -1, bold: false)]],
+                                 cols: 2, rows: 1))
+        // The second cell must explicitly turn bold off (SGR 22); otherwise it
+        // inherits the bold left active by the first cell.
+        #expect(out.vt.contains("\u{1B}[1;39;49mA\u{1B}[22;39;49mB"))
     }
 
     @Test func changedRowClearDoesNotLeakPriorBackground() {

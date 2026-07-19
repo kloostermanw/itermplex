@@ -145,8 +145,8 @@ final class ITermScreenStreamer: @unchecked Sendable {
             return
         }
         // Retire any handle from a prior process whose terminationHandler had
-        // not cleared it, so each new publish also releases the old fd
-        // (mirrors ITermMonitor's stale-handle handling).
+        // not cleared it, so each relaunch also releases the previous process's
+        // fd (mirrors ITermMonitor's stale-handle handling).
         let staleHandle = self.readHandle
         self.process = process
         self.stdinHandle = inPipe.fileHandleForWriting
