@@ -2,10 +2,11 @@ import Foundation
 import Observation
 
 /// Maps persisted `RemoteConnection`s to live `RemoteWorkspaceStore`s: starts a
-/// store for each new connection and stops + drops the store for any
-/// connection that has been removed. `ContentView` renders one sidebar
-/// section per entry in `stores`; `SettingsView` calls `sync()` after any
-/// add/edit/remove of a connection.
+/// store for each new connection, restarts the store (fresh instance) for any
+/// connection whose id was kept but whose details changed, and stops + drops
+/// the store for any connection that has been removed. `ContentView` renders
+/// one sidebar section per entry in `stores`; `SettingsView` calls `sync()`
+/// after any add/edit/remove of a connection.
 @MainActor
 @Observable
 final class RemoteWorkspacesController {
@@ -14,10 +15,15 @@ final class RemoteWorkspacesController {
 
     init(connections: RemoteConnectionsStore) { self.connections = connections }
 
-    /// Start stores for new connections, stop stores for removed ones.
+    /// Start stores for new connections, restart stores whose connection
+    /// details changed (name/host/port/token, same id), and stop stores for
+    /// removed ones. An unchanged connection keeps its existing store
+    /// instance untouched.
     func sync() {
         let ids = Set(connections.connections.map(\.id))
-        for connection in connections.connections where stores[connection.id] == nil {
+        for connection in connections.connections {
+            if let existing = stores[connection.id], existing.connection == connection { continue }
+            stores[connection.id]?.stop()
             let store = RemoteWorkspaceStore(connection: connection)
             stores[connection.id] = store
             store.start()
