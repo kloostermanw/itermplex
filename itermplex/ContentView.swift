@@ -6,6 +6,8 @@ struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var monitor: SessionMonitoring = ITermMonitor()
     @State private var mcpHost: MCPServerHost?
+    @State private var streamer = ITermScreenStreamer()
+    @State private var remoteServer: RemoteServer?
     @State private var isBusy = false
     @State private var renameTarget: (project: Project, ref: TerminalRef)?
     @State private var renameText = ""
@@ -77,11 +79,15 @@ struct ContentView: View {
             store.startPeriodicRefresh()
             monitor.start { event in store.handle(event) }
             if mcpHost == nil {
-                let host = MCPServerHost(router: MCPToolRouter(store: store))
+                let host = MCPServerHost(router: MCPToolRouter(store: store), port: store.mcpPort)
                 mcpHost = host
                 await host.start()
             }
+            await syncRemoteServer()
         }
+        .onChange(of: store.remoteEnabled) { Task { await syncRemoteServer() } }
+        .onChange(of: store.remotePort) { Task { await syncRemoteServer(forceRestart: true) } }
+        .onChange(of: store.mcpPort) { Task { await restartMCPHost() } }
         .alert("Rename terminal", isPresented: renameIsPresented) {
             TextField("Name", text: $renameText)
             Button("Cancel", role: .cancel) { renameTarget = nil }
@@ -111,6 +117,36 @@ struct ContentView: View {
             get: { renameTarget != nil },
             set: { presented in if !presented { renameTarget = nil } }
         )
+    }
+
+    /// Starts or stops `RemoteServer` to match `store.remoteEnabled`. When the
+    /// port changes, `forceRestart` tears down the running server first so it
+    /// rebinds on the new port.
+    private func syncRemoteServer(forceRestart: Bool = false) async {
+        if store.remoteEnabled {
+            if forceRestart, remoteServer != nil {
+                remoteServer?.stop()
+                remoteServer = nil
+            }
+            if remoteServer == nil {
+                let server = RemoteServer(store: store, streamer: streamer,
+                                          token: store.remoteToken, port: store.remotePort)
+                remoteServer = server
+                await server.start()
+            }
+        } else {
+            remoteServer?.stop()
+            remoteServer = nil
+            streamer.stop()
+        }
+    }
+
+    /// Recreates the MCP host on the currently configured port.
+    private func restartMCPHost() async {
+        mcpHost?.stop()
+        let host = MCPServerHost(router: MCPToolRouter(store: store), port: store.mcpPort)
+        mcpHost = host
+        await host.start()
     }
 
     private func addProject() {
