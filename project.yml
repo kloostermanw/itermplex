@@ -10,6 +10,9 @@ packages:
   Hummingbird:
     url: https://github.com/hummingbird-project/hummingbird
     from: "2.25.0"
+  HummingbirdWebSocket:
+    url: https://github.com/hummingbird-project/hummingbird-websocket
+    from: "2.2.0"
 targets:
   itermplex:
     type: application
@@ -20,6 +23,8 @@ targets:
         product: MCP
       - package: Hummingbird
         product: Hummingbird
+      - package: HummingbirdWebSocket
+        product: HummingbirdWebSocket
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: eu.kloosterman.itermplex
