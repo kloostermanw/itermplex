@@ -77,7 +77,8 @@ final class RemoteWorkspaceStore {
         // Reconnect after a short backoff.
         reconnectTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
-            if self.running { self.connect() }
+            guard !Task.isCancelled, self.running else { return }
+            self.connect()
         }
     }
 
