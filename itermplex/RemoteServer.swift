@@ -62,6 +62,28 @@ final class RemoteServer {
                             headers: [.contentType: "application/json"],
                             body: ResponseBody(byteBuffer: ByteBuffer(data: data)))
         }
+        router.get("api/workspaces") { request, _ -> Response in
+            guard Self.tokenOK(request, expected: expected) else { return Response(status: .unauthorized) }
+            let json = await MainActor.run { WorkspaceSerializer(store: store).workspaces().encodedString() }
+            return Response(status: .ok, headers: [.contentType: "application/json"],
+                            body: ResponseBody(byteBuffer: ByteBuffer(string: json)))
+        }
+        router.post("api/workspaces/:id/terminal") { request, ctx -> Response in
+            guard Self.tokenOK(request, expected: expected) else { return Response(status: .unauthorized) }
+            return await Self.openSession(store: store, workspaceId: ctx.parameters.get("id"), kind: .terminal)
+        }
+        router.post("api/workspaces/:id/claude") { request, ctx -> Response in
+            guard Self.tokenOK(request, expected: expected) else { return Response(status: .unauthorized) }
+            return await Self.openSession(store: store, workspaceId: ctx.parameters.get("id"), kind: .claude)
+        }
+        router.post("api/sessions/:sid/restart") { request, ctx -> Response in
+            guard Self.tokenOK(request, expected: expected) else { return Response(status: .unauthorized) }
+            return await Self.restartSession(store: store, sessionId: ctx.parameters.get("sid"))
+        }
+        router.post("api/sessions/:sid/close") { request, ctx -> Response in
+            guard Self.tokenOK(request, expected: expected) else { return Response(status: .unauthorized) }
+            return await Self.closeSession(store: store, sessionId: ctx.parameters.get("sid"))
+        }
 
         // WebSocket route, token checked at upgrade time.
         let wsRouter = Router(context: BasicWebSocketRequestContext.self)
@@ -94,6 +116,39 @@ final class RemoteServer {
                 streamer.detach(connectionId: connectionId)
                 continuation.finish()
                 await writer.value
+            })
+
+        wsRouter.ws("control",
+            shouldUpgrade: { request, _ in
+                Self.tokenOK(request, expected: expected) ? .upgrade([:]) : .dontUpgrade
+            },
+            onUpgrade: { inbound, outbound, _ in
+                let (subId, changes) = await MainActor.run { store.workspaceChanges() }
+                func snapshotJSON() async -> String {
+                    await MainActor.run {
+                        let ws = WorkspaceSerializer(store: store).workspaces()
+                        // Wrap as {"type":"snapshot","workspaces":[...]}.
+                        guard case let .object(m) = ws, let list = m["workspaces"] else { return "{}" }
+                        return JSONValue.object(["type": .string("snapshot"), "workspaces": list]).encodedString()
+                    }
+                }
+                // Initial snapshot.
+                try? await outbound.write(.text(await snapshotJSON()))
+                // Drain the change stream, debounced, until the socket closes.
+                let writer = Task {
+                    var pending = false
+                    for await _ in changes {
+                        if pending { continue }
+                        pending = true
+                        try? await Task.sleep(nanoseconds: 250_000_000)
+                        pending = false
+                        try? await outbound.write(.text(await snapshotJSON()))
+                    }
+                }
+                // Keep the socket open; ignore any inbound frames.
+                for try await _ in inbound.messages(maxSize: 1 << 16) {}
+                writer.cancel()
+                await MainActor.run { store.cancelWorkspaceChanges(subId) }
             })
 
         let application = Application(
@@ -139,6 +194,73 @@ final class RemoteServer {
         return Response(status: .ok,
                         headers: [.contentType: contentType],
                         body: ResponseBody(byteBuffer: ByteBuffer(data: data)))
+    }
+
+    private nonisolated static func jsonResponse(_ json: String) -> Response {
+        Response(status: .ok,
+                headers: [.contentType: "application/json"],
+                body: ResponseBody(byteBuffer: ByteBuffer(string: json)))
+    }
+
+    /// Opens a new terminal or claude session in the workspace with the given
+    /// id and returns its terminal JSON. `.notFound` if the workspace doesn't
+    /// exist, `.internalServerError` if the store action throws.
+    @MainActor
+    private static func openSession(store: ProjectStore, workspaceId: String?, kind: TerminalKind) async -> Response {
+        guard let workspaceId, let project = store.projects.first(where: { $0.id.uuidString == workspaceId }) else {
+            return Response(status: .notFound)
+        }
+        let command: String? = kind == .claude ? "claude" : nil
+        do {
+            let ref = try await store.openSessionThrowing(for: project, command: command, kind: kind)
+            let refreshed = store.projects.first { $0.id == project.id } ?? project
+            return Self.jsonResponse(Self.terminalJSON(ref, in: refreshed, store: store).encodedString())
+        } catch {
+            return Response(status: .internalServerError)
+        }
+    }
+
+    /// Restarts the tracked session with the given session id and returns its
+    /// updated terminal JSON. `.notFound` if no tracked terminal owns that id.
+    @MainActor
+    private static func restartSession(store: ProjectStore, sessionId: String?) async -> Response {
+        guard let sessionId,
+              store.projects.contains(where: { $0.terminals.contains { $0.sessionId == sessionId } }) else {
+            return Response(status: .notFound)
+        }
+        do {
+            let ref = try await store.restart(sessionId: sessionId)
+            guard let project = store.projects.first(where: { $0.terminals.contains { $0.id == ref.id } }) else {
+                return Response(status: .internalServerError)
+            }
+            return Self.jsonResponse(Self.terminalJSON(ref, in: project, store: store).encodedString())
+        } catch {
+            return Response(status: .internalServerError)
+        }
+    }
+
+    /// Closes the tracked session with the given session id, returning
+    /// `{"closed":true}`. `.notFound` if no tracked terminal owns that id.
+    @MainActor
+    private static func closeSession(store: ProjectStore, sessionId: String?) async -> Response {
+        guard let sessionId,
+              store.projects.contains(where: { $0.terminals.contains { $0.sessionId == sessionId } }) else {
+            return Response(status: .notFound)
+        }
+        do {
+            try await store.closeSession(sessionId: sessionId)
+            return Self.jsonResponse(JSONValue.object(["closed": .bool(true)]).encodedString())
+        } catch {
+            return Response(status: .internalServerError)
+        }
+    }
+
+    @MainActor
+    private static func terminalJSON(_ ref: TerminalRef, in project: Project, store: ProjectStore) -> JSONValue {
+        WorkspaceSerializer.terminal(ref, projectId: project.id, projectName: project.name,
+                                     runState: store.runState(for: ref),
+                                     needsAttention: store.attention.contains(ref.id),
+                                     jobName: store.jobNames[ref.id])
     }
 }
 
