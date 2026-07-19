@@ -17,19 +17,39 @@ struct VTOutput: Equatable {
 final class VTSynthesizer {
     private var lastCols: Int?
     private var lastRows: Int?
+    private var lastLines: [[ScreenCell]]?
 
     func render(_ frame: ScreenFrame) -> VTOutput {
         var resize: VTResize? = nil
-        if frame.cols != lastCols || frame.rows != lastRows {
+        let dimsChanged = frame.cols != lastCols || frame.rows != lastRows
+        if dimsChanged {
             resize = VTResize(cols: frame.cols, rows: frame.rows)
             lastCols = frame.cols
             lastRows = frame.rows
         }
-        var vt = "\u{1B}[0m\u{1B}[2J\u{1B}[H"   // reset attrs, clear, home
-        for (index, row) in frame.lines.enumerated() {
-            vt += Self.renderRow(row)
-            if index < frame.lines.count - 1 { vt += "\r\n" }
+
+        var vt: String
+        if dimsChanged || lastLines == nil {
+            // Full redraw.
+            vt = "\u{1B}[0m\u{1B}[2J\u{1B}[H"   // reset attrs, clear, home
+            for (index, row) in frame.lines.enumerated() {
+                vt += Self.renderRow(row)
+                if index < frame.lines.count - 1 { vt += "\r\n" }
+            }
+        } else {
+            // Rewrite only rows that differ from the last frame.
+            vt = ""
+            let previous = lastLines!
+            for (index, row) in frame.lines.enumerated() {
+                let old = index < previous.count ? previous[index] : nil
+                if old != row {
+                    vt += "\u{1B}[\(index + 1);1H\u{1B}[2K"   // go to row, clear it
+                    vt += Self.renderRow(row)
+                }
+            }
         }
+
+        lastLines = frame.lines
         // Position cursor (VT is 1-based).
         vt += "\u{1B}[\(frame.cursorY + 1);\(frame.cursorX + 1)H"
         return VTOutput(resize: resize, vt: vt)

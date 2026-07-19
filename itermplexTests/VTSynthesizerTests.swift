@@ -30,4 +30,30 @@ import Testing
         let out = s.render(frame([[ScreenCell(ch: "b", fg: -1, bg: -1, bold: false)]], cols: 1, rows: 1))
         #expect(out.resize == nil)
     }
+
+    @Test func unchangedFrameEmitsOnlyCursorPositioning() {
+        let s = VTSynthesizer()
+        let f = ScreenFrame(session: "s", cols: 1, rows: 2, cursorX: 0, cursorY: 0,
+                            lines: [[ScreenCell(ch: "a", fg: -1, bg: -1, bold: false)],
+                                    [ScreenCell(ch: "b", fg: -1, bg: -1, bold: false)]])
+        _ = s.render(f)                 // first: full redraw
+        let out = s.render(f)           // identical: nothing to redraw
+        #expect(out.resize == nil)
+        #expect(out.vt == "\u{1B}[1;1H")   // just reposition the cursor
+    }
+
+    @Test func onlyChangedRowIsRewritten() {
+        let s = VTSynthesizer()
+        let first = ScreenFrame(session: "s", cols: 1, rows: 2, cursorX: 0, cursorY: 1,
+                                lines: [[ScreenCell(ch: "a", fg: -1, bg: -1, bold: false)],
+                                        [ScreenCell(ch: "b", fg: -1, bg: -1, bold: false)]])
+        _ = s.render(first)
+        let second = ScreenFrame(session: "s", cols: 1, rows: 2, cursorX: 0, cursorY: 1,
+                                 lines: [[ScreenCell(ch: "a", fg: -1, bg: -1, bold: false)],
+                                         [ScreenCell(ch: "c", fg: -1, bg: -1, bold: false)]])
+        let out = s.render(second)
+        // Move to row 2, clear the line, rewrite it, then reposition cursor.
+        #expect(out.vt == "\u{1B}[2;1H\u{1B}[2K\u{1B}[39;49mc\u{1B}[2;1H")
+        #expect(!out.vt.contains("\u{1B}[2J"))   // no full clear
+    }
 }
