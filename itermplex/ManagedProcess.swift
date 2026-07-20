@@ -19,9 +19,9 @@ final class ManagedProcess: Identifiable {
     private let maxRapidRestarts = 3
     private let restartWindow: Duration
     private let now: @MainActor () -> ContinuousClock.Instant
-    /// Resolves the current `ITERMPLEX_*` variables at launch time, so
-    /// git-derived values reflect the latest refresh rather than a stale
-    /// snapshot from when the definition was applied.
+    /// Resolves the current `ITERMPLEX_*` variables. Re-evaluated on each launch,
+    /// stop, and status probe, so git-derived values reflect the latest refresh
+    /// rather than a stale snapshot from when the definition was applied.
     private let variables: @MainActor () -> [String: String]
 
     private var handle: ProcessHandle?
@@ -117,8 +117,14 @@ final class ManagedProcess: Identifiable {
         // re-probeable so we can notice if it went down externally.
         guard config.kind == .daemon, let statusCommand = config.status,
               state != .starting, state != .stopping, state != .orphaned else { return }
+        let vars = variables()
+        // A probe referencing an unresolved variable would expand it to empty
+        // and misreport health, so skip it and keep the last known state until
+        // the variable is available (or allow_empty_vars opts in). Silent by
+        // design: probes run on a timer, so logging would flood the buffer.
+        guard blocking(statusCommand, vars).isEmpty else { return }
         _ = try? launcher.launch(
-            command: statusCommand, directory: directory, environment: mergedEnvironment(variables()),
+            command: statusCommand, directory: directory, environment: mergedEnvironment(vars),
             onOutput: { _ in },
             onExit: { [weak self] code in self?.state = (code == 0) ? .running : .idle }
         )
@@ -142,8 +148,8 @@ final class ManagedProcess: Identifiable {
 
     private func launchMain() {
         let vars = variables()
-        let unresolved = ProcessVariables.unresolved(in: config.command, available: vars)
-        if !unresolved.isEmpty, !config.allowEmptyVars {
+        let unresolved = blocking(config.command, vars)
+        if !unresolved.isEmpty {
             log.append("Blocked: command references unset variable(s) \(unresolved.joined(separator: ", ")). Set \"allow_empty_vars\": true to run anyway.\n")
             state = .failed(-1)
             return
@@ -164,6 +170,16 @@ final class ManagedProcess: Identifiable {
     /// top, so the injected values are authoritative even if `env` names one.
     private func mergedEnvironment(_ vars: [String: String]) -> [String: String] {
         config.env.merging(vars) { _, injected in injected }
+    }
+
+    /// Unresolved `ITERMPLEX_*` references in `command` that must block running
+    /// it. Empty when the process opts into empty expansion via
+    /// `allow_empty_vars`, in which case the shell runs the command with the
+    /// missing values expanded to empty like any unset variable. Applied to
+    /// `command`, `stop`, and `status` so none of them runs blind.
+    private func blocking(_ command: String, _ vars: [String: String]) -> [String] {
+        guard !config.allowEmptyVars else { return [] }
+        return ProcessVariables.unresolved(in: command, available: vars)
     }
 
     private func handleExit(_ code: Int32) {
@@ -216,9 +232,20 @@ final class ManagedProcess: Identifiable {
             escalateSignals()
             return
         }
+        let vars = variables()
+        let unresolved = blocking(stopCommand, vars)
+        if !unresolved.isEmpty {
+            // Running a stop command with an unresolved variable could target
+            // the wrong thing (an empty branch, path, ...), so bring the
+            // process down with signals instead of running it blind. Mirror the
+            // launch-failure fallback: signal a live handle, else settle now.
+            log.append("Blocked: stop command references unset variable(s) \(unresolved.joined(separator: ", ")). Signaling instead; set \"allow_empty_vars\": true to run it.\n")
+            if handle != nil { escalateSignals() } else { settleStopped() }
+            return
+        }
         do {
             _ = try launcher.launch(
-                command: stopCommand, directory: directory, environment: mergedEnvironment(variables()),
+                command: stopCommand, directory: directory, environment: mergedEnvironment(vars),
                 onOutput: { [weak self] in self?.log.append($0) },
                 onExit: { [weak self] _ in self?.settleStopped() }
             )
