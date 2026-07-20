@@ -83,6 +83,34 @@ final class FakeGitInfoProvider: GitInfoProviding, @unchecked Sendable {
         #expect(store.gitInfo[project.id] == nil)
     }
 
+    @Test func processVariablesAlwaysExposeWorkspacePathAndName() {
+        let store = ProjectStore(defaults: makeDefaults(), service: FakeTerminalService(), gitProvider: FakeGitInfoProvider())
+        let folder = makeTempFolder(named: "myapp")
+        store.addProject(url: folder)
+        let project = store.projects[0]
+        let vars = store.processVariables(for: project.id)
+        #expect(vars["ITERMPLEX_WORKSPACE_PATH"] == project.url.path)
+        #expect(vars["ITERMPLEX_WORKSPACE_NAME"] == "myapp")
+        // No git sync has run, so no git-derived variables are present.
+        #expect(vars["ITERMPLEX_BRANCH"] == nil)
+        #expect(vars["ITERMPLEX_PR_NUMBER"] == nil)
+    }
+
+    @Test func processVariablesExposeGitValuesWhenKnown() async {
+        let provider = FakeGitInfoProvider()
+        let store = ProjectStore(defaults: makeDefaults(), service: FakeTerminalService(), gitProvider: provider)
+        let folder = makeTempFolder(named: "proj")
+        store.addProject(url: folder)
+        provider.results[folder.standardizedFileURL.path] = gitInfo(behind: 0, ahead: 0, pr: 42)
+        await store.refreshAllGitInfo()
+
+        let id = store.projects[0].id
+        let vars = store.processVariables(for: id)
+        #expect(vars["ITERMPLEX_BRANCH"] == "feature/issue-1")
+        #expect(vars["ITERMPLEX_ISSUE_NUMBER"] == "1")
+        #expect(vars["ITERMPLEX_PR_NUMBER"] == "42")
+    }
+
     @Test func refreshHandlesMoreProjectsThanConcurrencyLimit() async {
         let provider = FakeGitInfoProvider()
         let store = ProjectStore(defaults: makeDefaults(), service: FakeTerminalService(), gitProvider: provider)

@@ -674,6 +674,31 @@ final class ProjectStore {
         return URL(string: "https://github.com/\(owner)/\(repo)/pull/\(pr)")
     }
 
+    /// The `ITERMPLEX_*` variables exposed to a workspace's process commands.
+    /// Workspace path and name are always present; git-derived values appear
+    /// only when known (they lag a refresh and are absent for non-repos), so a
+    /// command referencing one is blocked until its value is available (unless
+    /// the process opts into `allow_empty_vars`).
+    func processVariables(for projectId: UUID) -> [String: String] {
+        guard let project = projects.first(where: { $0.id == projectId }) else { return [:] }
+        var vars: [String: String] = [
+            "ITERMPLEX_WORKSPACE_PATH": project.url.path,
+            "ITERMPLEX_WORKSPACE_NAME": project.name,
+        ]
+        if let info = gitInfo[projectId] {
+            if !info.branch.isEmpty { vars["ITERMPLEX_BRANCH"] = info.branch }
+            if let upstream = info.upstreamRef { vars["ITERMPLEX_UPSTREAM"] = upstream }
+            if let base = info.baseRef { vars["ITERMPLEX_BASE_BRANCH"] = base }
+            if let issue = info.issueNumber { vars["ITERMPLEX_ISSUE_NUMBER"] = String(issue) }
+            if let pr = info.prNumber { vars["ITERMPLEX_PR_NUMBER"] = String(pr) }
+        }
+        if let (owner, repo) = ownerRepo[projectId] {
+            if let owner { vars["ITERMPLEX_OWNER"] = owner }
+            if let repo { vars["ITERMPLEX_REPO"] = repo }
+        }
+        return vars
+    }
+
     func startPeriodicRefresh() {
         guard refreshTask == nil else { return }
         refreshTask = Task { [weak self] in
@@ -747,7 +772,9 @@ final class ProjectStore {
         projects[index].terminals = result.terminals
         projects[index].configName = config.name
         projects[index].configProcesses = config.processes
-        processes.apply(config, projectId: projectId, directory: url)
+        processes.apply(config, projectId: projectId, directory: url) { [weak self] in
+            self?.processVariables(for: projectId) ?? [:]
+        }
         localOnlyTerminals.formUnion(result.localOnly)
         lastConfigData[projectId] = ConfigFile.rawData(in: url)
         save()

@@ -67,6 +67,7 @@ Processes live under a `processes` key, keyed by name:
 | `auto_restart` | bool | `false` | Restart on unexpected exit (see Limitations). |
 | `restart_when_changed` | array | `[]` | Paths to watch (see Limitations). |
 | `env` | object | `{}` | Extra environment variables. |
+| `allow_empty_vars` | bool | `false` | Run even when a referenced `ITERMPLEX_*` variable has no value (see Variables). |
 
 ### Kinds and controls
 
@@ -143,6 +144,47 @@ There is no dedicated PATH field. If you truly need to set PATH, use `env`, but 
 reliable option because the login shell can rebuild PATH through `path_helper`. Prefer project
 local commands (for example `vendor/bin/phpunit`, `cd src && sail ...`), which do not depend on
 PATH at all.
+
+### Variables
+
+iTermPlex injects a set of workspace variables into every process as environment
+variables under the `ITERMPLEX_` prefix. Reference them in `command`, `stop`, and
+`status` with normal shell syntax (`$ITERMPLEX_BRANCH` or `${ITERMPLEX_BRANCH}`),
+and the login shell expands them when it runs the command.
+
+```json
+"processes": {
+  "tower": { "command": "gittower $ITERMPLEX_WORKSPACE_PATH", "kind": "short_running" },
+  "pr":    { "command": "gh pr view $ITERMPLEX_PR_NUMBER --web", "kind": "short_running" }
+}
+```
+
+| Variable | Value |
+| --- | --- |
+| `ITERMPLEX_WORKSPACE_PATH` | Absolute path of the workspace folder. |
+| `ITERMPLEX_WORKSPACE_NAME` | Workspace display name (the config `name`, else the folder name). |
+| `ITERMPLEX_BRANCH` | Current git branch. |
+| `ITERMPLEX_UPSTREAM` | Upstream tracking ref (for example `origin/feature-x`). |
+| `ITERMPLEX_BASE_BRANCH` | Base branch ref (for example `origin/main`). |
+| `ITERMPLEX_OWNER` | Repository owner. |
+| `ITERMPLEX_REPO` | Repository name. |
+| `ITERMPLEX_ISSUE_NUMBER` | Issue number parsed from the branch name. |
+| `ITERMPLEX_PR_NUMBER` | Pull request number for the current branch. |
+
+Workspace path and name are always available. The git derived variables come from
+the same status refresh the workspace card uses, so they are only as fresh as the
+last refresh and are absent when unknown (a non git folder, a branch with no
+upstream, no open PR, and so on).
+
+By default, a command that references a variable with no value is blocked rather
+than run with the variable expanding to empty. The process is marked failed and a
+message names the missing variables. Set `"allow_empty_vars": true` on the process
+to opt into running anyway, in which case an unavailable variable expands to an
+empty string like any unset shell variable.
+
+Expansion happens in the shell that runs `command`, `stop`, and `status`, so it
+does not apply to literal values in the `env` map (those are set verbatim, not shell
+evaluated).
 
 ### Limitations (v1)
 
