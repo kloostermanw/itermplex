@@ -11,11 +11,13 @@ final class FakeHandle: @preconcurrency ProcessHandle, @unchecked Sendable {
 @MainActor
 final class FakeLaunch: @unchecked Sendable {
     let command: String
+    let environment: [String: String]
     let onOutput: @MainActor (String) -> Void
     let onExit: @MainActor (Int32) -> Void
     let handle = FakeHandle()
-    init(command: String, onOutput: @escaping @MainActor (String) -> Void, onExit: @escaping @MainActor (Int32) -> Void) {
+    init(command: String, environment: [String: String], onOutput: @escaping @MainActor (String) -> Void, onExit: @escaping @MainActor (Int32) -> Void) {
         self.command = command
+        self.environment = environment
         self.onOutput = onOutput
         self.onExit = onExit
     }
@@ -38,7 +40,7 @@ final class FakeProcessLauncher: @preconcurrency ProcessLaunching, @unchecked Se
         onExit: @escaping @MainActor (Int32) -> Void
     ) throws -> ProcessHandle {
         if failingCommands.contains(command) { throw ProcessLaunchError.spawnFailed(1) }
-        let launch = FakeLaunch(command: command, onOutput: onOutput, onExit: onExit)
+        let launch = FakeLaunch(command: command, environment: environment, onOutput: onOutput, onExit: onExit)
         launches.append(launch)
         if let code = immediateExit[command] {
             onExit(code)
@@ -244,5 +246,67 @@ final class FakeProcessLauncher: @preconcurrency ProcessLaunching, @unchecked Se
             #expect(launcher.launches.count == expected)
             clock = clock.advanced(by: .seconds(120))
         }
+    }
+
+    // MARK: Variable injection
+
+    @Test func injectsVariablesIntoLaunchEnvironment() {
+        let launcher = FakeProcessLauncher()
+        let p = ManagedProcess(
+            name: "tower", config: ProcessConfig(command: "gittower $ITERMPLEX_WORKSPACE_PATH", kind: .shortRunning),
+            directory: dir, launcher: launcher,
+            variables: { ["ITERMPLEX_WORKSPACE_PATH": "/repos/app"] }
+        )
+        p.start()
+        #expect(p.state == .running)
+        #expect(launcher.last.environment["ITERMPLEX_WORKSPACE_PATH"] == "/repos/app")
+    }
+
+    @Test func injectedVariablesOverrideEnvOfSameName() {
+        let launcher = FakeProcessLauncher()
+        let config = ProcessConfig(command: "run", kind: .shortRunning, env: ["ITERMPLEX_BRANCH": "stale"])
+        let p = ManagedProcess(
+            name: "p", config: config, directory: dir, launcher: launcher,
+            variables: { ["ITERMPLEX_BRANCH": "feature/x"] }
+        )
+        p.start()
+        #expect(launcher.last.environment["ITERMPLEX_BRANCH"] == "feature/x")
+    }
+
+    @Test func blocksLaunchWhenVariableUnresolved() {
+        let launcher = FakeProcessLauncher()
+        let p = ManagedProcess(
+            name: "p", config: ProcessConfig(command: "gh pr view $ITERMPLEX_PR_NUMBER", kind: .shortRunning),
+            directory: dir, launcher: launcher,
+            variables: { ["ITERMPLEX_WORKSPACE_PATH": "/repos/app"] }
+        )
+        p.start()
+        #expect(p.state == .failed(-1))
+        #expect(launcher.launches.isEmpty)
+        #expect(p.log.lines.contains { $0.contains("ITERMPLEX_PR_NUMBER") })
+    }
+
+    @Test func allowEmptyVarsPermitsUnresolvedLaunch() {
+        let launcher = FakeProcessLauncher()
+        let config = ProcessConfig(command: "gh pr view $ITERMPLEX_PR_NUMBER", kind: .shortRunning, allowEmptyVars: true)
+        let p = ManagedProcess(
+            name: "p", config: config, directory: dir, launcher: launcher,
+            variables: { [:] }
+        )
+        p.start()
+        #expect(p.state == .running)
+        #expect(launcher.launches.count == 1)
+    }
+
+    @Test func launchesWhenAllReferencedVariablesResolve() {
+        let launcher = FakeProcessLauncher()
+        let p = ManagedProcess(
+            name: "p", config: ProcessConfig(command: "echo ${ITERMPLEX_BRANCH}", kind: .shortRunning),
+            directory: dir, launcher: launcher,
+            variables: { ["ITERMPLEX_BRANCH": "main"] }
+        )
+        p.start()
+        #expect(p.state == .running)
+        #expect(launcher.last.environment["ITERMPLEX_BRANCH"] == "main")
     }
 }

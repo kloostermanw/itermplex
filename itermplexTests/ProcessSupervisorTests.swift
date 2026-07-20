@@ -49,6 +49,17 @@ import Foundation
         #expect(sup.process(projectId: pid, name: "d")?.state == .running)
     }
 
+    @Test func applyThreadsVariablesIntoLaunchEnvironment() {
+        let launcher = FakeProcessLauncher()
+        let sup = ProcessSupervisor(launcher: launcher)
+        sup.apply(
+            config(["npm": ProcessConfig(command: "npm run dev", autoStart: true)]),
+            projectId: pid, directory: dir,
+            variables: { ["ITERMPLEX_WORKSPACE_PATH": "/repos/app"] }
+        )
+        #expect(launcher.last.environment["ITERMPLEX_WORKSPACE_PATH"] == "/repos/app")
+    }
+
     @Test func removeWorkspaceRunsDaemonStopCommand() {
         let launcher = FakeProcessLauncher()
         launcher.immediateExit["up"] = 0

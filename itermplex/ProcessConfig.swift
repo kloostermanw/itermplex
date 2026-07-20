@@ -19,6 +19,10 @@ struct ProcessConfig: Codable, Equatable {
     var autoRestart: Bool
     var restartWhenChanged: [String]
     var env: [String: String]
+    /// When false (the default), a command that references an `ITERMPLEX_*`
+    /// variable with no value is blocked rather than run with the variable
+    /// expanding to empty. Set true to opt into empty expansion.
+    var allowEmptyVars: Bool
 
     init(
         command: String,
@@ -28,7 +32,8 @@ struct ProcessConfig: Codable, Equatable {
         autoStart: Bool = false,
         autoRestart: Bool = false,
         restartWhenChanged: [String] = [],
-        env: [String: String] = [:]
+        env: [String: String] = [:],
+        allowEmptyVars: Bool = false
     ) {
         self.command = command
         self.kind = kind
@@ -38,6 +43,7 @@ struct ProcessConfig: Codable, Equatable {
         self.autoRestart = autoRestart
         self.restartWhenChanged = restartWhenChanged
         self.env = env
+        self.allowEmptyVars = allowEmptyVars
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -46,6 +52,7 @@ struct ProcessConfig: Codable, Equatable {
         case autoRestart = "auto_restart"
         case restartWhenChanged = "restart_when_changed"
         case env
+        case allowEmptyVars = "allow_empty_vars"
     }
 
     init(from decoder: Decoder) throws {
@@ -58,5 +65,6 @@ struct ProcessConfig: Codable, Equatable {
         autoRestart = try c.decodeIfPresent(Bool.self, forKey: .autoRestart) ?? false
         restartWhenChanged = try c.decodeIfPresent([String].self, forKey: .restartWhenChanged) ?? []
         env = try c.decodeIfPresent([String: String].self, forKey: .env) ?? [:]
+        allowEmptyVars = try c.decodeIfPresent(Bool.self, forKey: .allowEmptyVars) ?? false
     }
 }

@@ -19,6 +19,10 @@ final class ManagedProcess: Identifiable {
     private let maxRapidRestarts = 3
     private let restartWindow: Duration
     private let now: @MainActor () -> ContinuousClock.Instant
+    /// Resolves the current `ITERMPLEX_*` variables at launch time, so
+    /// git-derived values reflect the latest refresh rather than a stale
+    /// snapshot from when the definition was applied.
+    private let variables: @MainActor () -> [String: String]
 
     private var handle: ProcessHandle?
     private var stopRequested = false
@@ -34,7 +38,8 @@ final class ManagedProcess: Identifiable {
         launcher: ProcessLaunching,
         graceInterval: Duration = .seconds(5),
         restartWindow: Duration = .seconds(60),
-        now: @escaping @MainActor () -> ContinuousClock.Instant = { ContinuousClock.now }
+        now: @escaping @MainActor () -> ContinuousClock.Instant = { ContinuousClock.now },
+        variables: @escaping @MainActor () -> [String: String] = { [:] }
     ) {
         self.name = name
         self.config = config
@@ -43,6 +48,7 @@ final class ManagedProcess: Identifiable {
         self.graceInterval = graceInterval
         self.restartWindow = restartWindow
         self.now = now
+        self.variables = variables
     }
 
     // MARK: Controls
@@ -112,7 +118,7 @@ final class ManagedProcess: Identifiable {
         guard config.kind == .daemon, let statusCommand = config.status,
               state != .starting, state != .stopping, state != .orphaned else { return }
         _ = try? launcher.launch(
-            command: statusCommand, directory: directory, environment: config.env,
+            command: statusCommand, directory: directory, environment: mergedEnvironment(variables()),
             onOutput: { _ in },
             onExit: { [weak self] code in self?.state = (code == 0) ? .running : .idle }
         )
@@ -135,16 +141,29 @@ final class ManagedProcess: Identifiable {
     }
 
     private func launchMain() {
+        let vars = variables()
+        let unresolved = ProcessVariables.unresolved(in: config.command, available: vars)
+        if !unresolved.isEmpty, !config.allowEmptyVars {
+            log.append("Blocked: command references unset variable(s) \(unresolved.joined(separator: ", ")). Set \"allow_empty_vars\": true to run anyway.\n")
+            state = .failed(-1)
+            return
+        }
         state = config.kind == .daemon ? .starting : .running
         stopRequested = false
         handle = try? launcher.launch(
             command: config.command,
             directory: directory,
-            environment: config.env,
+            environment: mergedEnvironment(vars),
             onOutput: { [weak self] chunk in self?.log.append(chunk) },
             onExit: { [weak self] code in self?.handleExit(code) }
         )
         if handle == nil { state = .failed(-1) }
+    }
+
+    /// The definition's `env` with the current `ITERMPLEX_*` variables layered on
+    /// top, so the injected values are authoritative even if `env` names one.
+    private func mergedEnvironment(_ vars: [String: String]) -> [String: String] {
+        config.env.merging(vars) { _, injected in injected }
     }
 
     private func handleExit(_ code: Int32) {
@@ -199,7 +218,7 @@ final class ManagedProcess: Identifiable {
         }
         do {
             _ = try launcher.launch(
-                command: stopCommand, directory: directory, environment: config.env,
+                command: stopCommand, directory: directory, environment: mergedEnvironment(variables()),
                 onOutput: { [weak self] in self?.log.append($0) },
                 onExit: { [weak self] _ in self?.settleStopped() }
             )

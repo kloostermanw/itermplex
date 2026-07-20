@@ -27,7 +27,12 @@ final class ProcessSupervisor {
     /// Reconciles process definitions for one workspace: adds new, updates
     /// existing, drops removed (or orphans them if still running), auto-starts
     /// new definitions (probing already-up daemons first).
-    func apply(_ config: ItermplexConfig?, projectId: UUID, directory: URL) {
+    func apply(
+        _ config: ItermplexConfig?,
+        projectId: UUID,
+        directory: URL,
+        variables: @escaping @MainActor () -> [String: String] = { [:] }
+    ) {
         let defined = config?.processes ?? [:]
         let current = byProject[projectId] ?? []
 
@@ -49,7 +54,8 @@ final class ProcessSupervisor {
         for (name, def) in defined where !existingNames.contains(name) {
             let process = ManagedProcess(
                 name: name, config: def, directory: directory,
-                launcher: launcher, graceInterval: graceInterval
+                launcher: launcher, graceInterval: graceInterval,
+                variables: variables
             )
             kept.append(process)
             if def.autoStart { autoStart(process) }
