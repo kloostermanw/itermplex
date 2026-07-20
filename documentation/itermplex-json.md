@@ -171,11 +171,15 @@ the same status refresh the workspace card uses, so they are only as fresh as th
 last refresh and are absent when unknown (a non git folder, a branch with no
 upstream, no open PR, and so on).
 
-By default, a command that references a variable with no value is blocked rather
-than run with the variable expanding to empty. The process is marked failed and a
-message names the missing variables. Set `"allow_empty_vars": true` on the process
-to opt into running anyway, in which case an unavailable variable expands to an
-empty string like any unset shell variable.
+By default, a shell command that references a variable with no value is blocked
+rather than run with the variable expanding to empty. This guards all three shell
+run strings, each in the way that fits it: a `command` reference marks the process
+failed with a message naming the missing variables; a `stop` reference is skipped
+in favor of signaling the process down (SIGINT, then SIGTERM, then SIGKILL), so
+teardown never runs against an empty target; and a `status` probe reference is
+skipped so it does not misreport health. Set `"allow_empty_vars": true` on the
+process to opt into running any of them anyway, in which case an unavailable
+variable expands to an empty string like any unset shell variable.
 
 Expansion happens in the shell that runs `command`, `stop`, and `status`, so it
 does not apply to literal values in the `env` map (those are set verbatim, not shell
