@@ -140,6 +140,30 @@ import Foundation
         #expect(store.projects[0].terminals.map(\.slot) == ["Terminal 1"])
     }
 
+    @Test func editedNameOnDiskAppliesAfterApply() throws {
+        let store = ProjectStore(defaults: makeDefaults(), service: FakeTerminalService())
+        let folder = tempFolder()
+        try ConfigFile.write(
+            ItermplexConfig(name: "old", agents: [], iterm: []),
+            in: folder
+        )
+        store.addProject(url: folder)
+        let id = store.projects[0].id
+        #expect(store.projects[0].name == "old")
+
+        // External edit changes only the name, then simulate the watcher firing.
+        try ConfigFile.write(
+            ItermplexConfig(name: "new", agents: [], iterm: []),
+            in: folder
+        )
+        store.configFileDidChange(id)
+        #expect(store.configChangedOnDisk.contains(id))
+
+        store.applyConfigChanges(for: store.projects[0])
+        #expect(store.configChangedOnDisk.contains(id) == false)
+        #expect(store.projects[0].name == "new")
+    }
+
     @Test func ownWriteDoesNotRaiseSignal() async throws {
         let fake = FakeTerminalService()
         fake.handles = [TerminalHandle(sessionId: "s1", windowId: "w1")]
