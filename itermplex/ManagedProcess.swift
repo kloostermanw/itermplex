@@ -27,6 +27,11 @@ final class ManagedProcess: Identifiable {
     private var handle: ProcessHandle?
     private var stopRequested = false
     private var escalation: Task<Void, Never>?
+    /// The missing-variable set most recently logged as a skipped status probe.
+    /// Probes are polled repeatedly, so a skip is logged only when this set
+    /// changes; it is reset once a probe actually runs, so a recurrence logs
+    /// afresh instead of staying silent forever.
+    private var lastSkippedStatusVars: [String]?
     /// Timestamps of recent auto-restarts, pruned to `restartWindow`. The cap
     /// counts a tight crash loop, not crashes spread across the process's life.
     private var recentRestarts: [ContinuousClock.Instant] = []
@@ -118,11 +123,21 @@ final class ManagedProcess: Identifiable {
         guard config.kind == .daemon, let statusCommand = config.status,
               state != .starting, state != .stopping, state != .orphaned else { return }
         let vars = variables()
-        // A probe referencing an unresolved variable would expand it to empty
-        // and misreport health, so skip it and keep the last known state until
-        // the variable is available (or allow_empty_vars opts in). Silent by
-        // design: probes run on a timer, so logging would flood the buffer.
-        guard blocking(statusCommand, vars).isEmpty else { return }
+        let unresolved = blocking(statusCommand, vars)
+        guard unresolved.isEmpty else {
+            // A probe referencing an unresolved variable would expand it to
+            // empty and misreport health, so skip it and keep the last known
+            // state until the variable is available (or allow_empty_vars opts
+            // in). Log once per distinct missing set rather than on every poll,
+            // so a permanently-absent variable is still surfaced without
+            // flooding the buffer.
+            if unresolved != lastSkippedStatusVars {
+                lastSkippedStatusVars = unresolved
+                log.append("Status probe skipped: references unset variable(s) \(unresolved.joined(separator: ", ")). Health is not being checked; set \"allow_empty_vars\": true to probe anyway.\n")
+            }
+            return
+        }
+        lastSkippedStatusVars = nil
         _ = try? launcher.launch(
             command: statusCommand, directory: directory, environment: mergedEnvironment(vars),
             onOutput: { _ in },
@@ -172,11 +187,11 @@ final class ManagedProcess: Identifiable {
         config.env.merging(vars) { _, injected in injected }
     }
 
-    /// Unresolved `ITERMPLEX_*` references in `command` that must block running
-    /// it. Empty when the process opts into empty expansion via
-    /// `allow_empty_vars`, in which case the shell runs the command with the
-    /// missing values expanded to empty like any unset variable. Applied to
-    /// `command`, `stop`, and `status` so none of them runs blind.
+    /// Unresolved `ITERMPLEX_*` references in the given shell string that must
+    /// block running it. Empty when the process opts into empty expansion via
+    /// `allow_empty_vars`, in which case the shell runs the string with the
+    /// missing values expanded to empty like any unset variable. Applied to the
+    /// `command`, `stop`, and `status` strings so none of them runs blind.
     private func blocking(_ command: String, _ vars: [String: String]) -> [String] {
         guard !config.allowEmptyVars else { return [] }
         return ProcessVariables.unresolved(in: command, available: vars)
@@ -236,11 +251,19 @@ final class ManagedProcess: Identifiable {
         let unresolved = blocking(stopCommand, vars)
         if !unresolved.isEmpty {
             // Running a stop command with an unresolved variable could target
-            // the wrong thing (an empty branch, path, ...), so bring the
-            // process down with signals instead of running it blind. Mirror the
-            // launch-failure fallback: signal a live handle, else settle now.
-            log.append("Blocked: stop command references unset variable(s) \(unresolved.joined(separator: ", ")). Signaling instead; set \"allow_empty_vars\": true to run it.\n")
-            if handle != nil { escalateSignals() } else { settleStopped() }
+            // the wrong thing (an empty branch, path, ...), so don't run it
+            // blind. Mirror the launch-failure fallback: signal a live handle,
+            // else settle now. A daemon whose start command has already exited
+            // has no handle, so its teardown does not run at all; the log below
+            // says so rather than claiming a signal that never happens.
+            let missing = unresolved.joined(separator: ", ")
+            if handle != nil {
+                log.append("Blocked: stop command references unset variable(s) \(missing). Signaling the process down instead; set \"allow_empty_vars\": true to run it.\n")
+                escalateSignals()
+            } else {
+                log.append("Blocked: stop command references unset variable(s) \(missing). No live process to signal, so the stop command's teardown did not run; set \"allow_empty_vars\": true to run it anyway.\n")
+                settleStopped()
+            }
             return
         }
         do {
