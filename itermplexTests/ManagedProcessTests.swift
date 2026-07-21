@@ -340,6 +340,26 @@ final class FakeProcessLauncher: @preconcurrency ProcessLaunching, @unchecked Se
         #expect(p.log.lines.contains { $0.contains("ITERMPLEX_BRANCH") })
     }
 
+    @Test func blockedDaemonStopWithNoHandleSettlesIdle() {
+        let launcher = FakeProcessLauncher()
+        let config = ProcessConfig(command: "sail up -d", kind: .daemon, stop: "teardown $ITERMPLEX_BRANCH")
+        let p = ManagedProcess(
+            name: "sail", config: config, directory: dir, launcher: launcher, graceInterval: .zero,
+            variables: { [:] }
+        )
+        p.start()
+        // The start command exits after launch returns, clearing the handle, so
+        // the daemon is up with no live process to signal (the real steady state).
+        launcher.last.onExit(0)
+        #expect(p.state == .running)
+        p.stop()
+        // No handle to signal and the stop command is blocked, so it settles
+        // idle without running teardown; only the start command ever launched.
+        #expect(p.state == .idle)
+        #expect(launcher.launches.count == 1)
+        #expect(p.log.lines.contains { $0.contains("ITERMPLEX_BRANCH") })
+    }
+
     @Test func allowEmptyVarsRunsUnresolvedStopCommand() {
         let launcher = FakeProcessLauncher()
         let config = ProcessConfig(

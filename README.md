@@ -179,12 +179,14 @@ upstream, no open PR, and so on).
 By default, a shell command that references a variable with no value is blocked
 rather than run with the variable expanding to empty. This guards all three
 shell run strings, each in the way that fits it: a `command` reference marks the
-process failed with a message naming the missing variables; a `stop` reference is
-skipped in favor of signaling the process down (SIGINT, then SIGTERM, then
-SIGKILL), so teardown never runs against an empty target; and a `status` probe
-reference is skipped so it does not misreport health. Set `"allow_empty_vars":
-true` on the process to opt into running any of them anyway, in which case an
-unavailable variable expands to an empty string like any unset shell variable.
+process failed with a message naming the missing variables; a `stop` reference
+blocks the stop command so it never runs against an empty target (a live process
+is signaled down instead, SIGINT then SIGTERM then SIGKILL, while a process with
+no live handle, typically a daemon whose start command already exited, is marked
+stopped without running its teardown); and a `status` probe reference is skipped
+so it does not misreport health. Set `"allow_empty_vars": true` on the process to
+opt into running any of them anyway, in which case an unavailable variable expands
+to an empty string like any unset shell variable.
 
 Expansion happens in the shell that runs `command`, `stop`, and `status`, so it
 does not apply to literal values in the `env` map (those are set verbatim, not shell
