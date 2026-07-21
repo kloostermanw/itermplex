@@ -11,11 +11,13 @@ final class FakeHandle: @preconcurrency ProcessHandle, @unchecked Sendable {
 @MainActor
 final class FakeLaunch: @unchecked Sendable {
     let command: String
+    let environment: [String: String]
     let onOutput: @MainActor (String) -> Void
     let onExit: @MainActor (Int32) -> Void
     let handle = FakeHandle()
-    init(command: String, onOutput: @escaping @MainActor (String) -> Void, onExit: @escaping @MainActor (Int32) -> Void) {
+    init(command: String, environment: [String: String], onOutput: @escaping @MainActor (String) -> Void, onExit: @escaping @MainActor (Int32) -> Void) {
         self.command = command
+        self.environment = environment
         self.onOutput = onOutput
         self.onExit = onExit
     }
@@ -38,7 +40,7 @@ final class FakeProcessLauncher: @preconcurrency ProcessLaunching, @unchecked Se
         onExit: @escaping @MainActor (Int32) -> Void
     ) throws -> ProcessHandle {
         if failingCommands.contains(command) { throw ProcessLaunchError.spawnFailed(1) }
-        let launch = FakeLaunch(command: command, onOutput: onOutput, onExit: onExit)
+        let launch = FakeLaunch(command: command, environment: environment, onOutput: onOutput, onExit: onExit)
         launches.append(launch)
         if let code = immediateExit[command] {
             onExit(code)
@@ -244,5 +246,162 @@ final class FakeProcessLauncher: @preconcurrency ProcessLaunching, @unchecked Se
             #expect(launcher.launches.count == expected)
             clock = clock.advanced(by: .seconds(120))
         }
+    }
+
+    // MARK: Variable injection
+
+    @Test func injectsVariablesIntoLaunchEnvironment() {
+        let launcher = FakeProcessLauncher()
+        let p = ManagedProcess(
+            name: "tower", config: ProcessConfig(command: "gittower $ITERMPLEX_WORKSPACE_PATH", kind: .shortRunning),
+            directory: dir, launcher: launcher,
+            variables: { ["ITERMPLEX_WORKSPACE_PATH": "/repos/app"] }
+        )
+        p.start()
+        #expect(p.state == .running)
+        #expect(launcher.last.environment["ITERMPLEX_WORKSPACE_PATH"] == "/repos/app")
+    }
+
+    @Test func injectedVariablesOverrideEnvOfSameName() {
+        let launcher = FakeProcessLauncher()
+        let config = ProcessConfig(command: "run", kind: .shortRunning, env: ["ITERMPLEX_BRANCH": "stale"])
+        let p = ManagedProcess(
+            name: "p", config: config, directory: dir, launcher: launcher,
+            variables: { ["ITERMPLEX_BRANCH": "feature/x"] }
+        )
+        p.start()
+        #expect(launcher.last.environment["ITERMPLEX_BRANCH"] == "feature/x")
+    }
+
+    @Test func blocksLaunchWhenVariableUnresolved() {
+        let launcher = FakeProcessLauncher()
+        let p = ManagedProcess(
+            name: "p", config: ProcessConfig(command: "gh pr view $ITERMPLEX_PR_NUMBER", kind: .shortRunning),
+            directory: dir, launcher: launcher,
+            variables: { ["ITERMPLEX_WORKSPACE_PATH": "/repos/app"] }
+        )
+        p.start()
+        #expect(p.state == .failed(-1))
+        #expect(launcher.launches.isEmpty)
+        #expect(p.log.lines.contains { $0.contains("ITERMPLEX_PR_NUMBER") })
+    }
+
+    @Test func allowEmptyVarsPermitsUnresolvedLaunch() {
+        let launcher = FakeProcessLauncher()
+        let config = ProcessConfig(command: "gh pr view $ITERMPLEX_PR_NUMBER", kind: .shortRunning, allowEmptyVars: true)
+        let p = ManagedProcess(
+            name: "p", config: config, directory: dir, launcher: launcher,
+            variables: { [:] }
+        )
+        p.start()
+        #expect(p.state == .running)
+        #expect(launcher.launches.count == 1)
+    }
+
+    @Test func launchesWhenAllReferencedVariablesResolve() {
+        let launcher = FakeProcessLauncher()
+        let p = ManagedProcess(
+            name: "p", config: ProcessConfig(command: "echo ${ITERMPLEX_BRANCH}", kind: .shortRunning),
+            directory: dir, launcher: launcher,
+            variables: { ["ITERMPLEX_BRANCH": "main"] }
+        )
+        p.start()
+        #expect(p.state == .running)
+        #expect(launcher.last.environment["ITERMPLEX_BRANCH"] == "main")
+    }
+
+    @Test func injectsVariablesIntoStopEnvironment() {
+        let launcher = FakeProcessLauncher()
+        let config = ProcessConfig(command: "npm run dev", kind: .longRunning, stop: "teardown $ITERMPLEX_WORKSPACE_PATH")
+        let p = ManagedProcess(
+            name: "p", config: config, directory: dir, launcher: launcher, graceInterval: .zero,
+            variables: { ["ITERMPLEX_WORKSPACE_PATH": "/repos/app"] }
+        )
+        p.start()
+        p.stop()
+        #expect(launcher.last.command == "teardown $ITERMPLEX_WORKSPACE_PATH")
+        #expect(launcher.last.environment["ITERMPLEX_WORKSPACE_PATH"] == "/repos/app")
+    }
+
+    @Test func blockedStopCommandSignalsInsteadOfRunning() {
+        let launcher = FakeProcessLauncher()
+        let config = ProcessConfig(command: "npm run dev", kind: .longRunning, stop: "kill-branch $ITERMPLEX_BRANCH")
+        let p = ManagedProcess(
+            name: "p", config: config, directory: dir, launcher: launcher, graceInterval: .zero,
+            variables: { [:] }
+        )
+        p.start()
+        #expect(p.state == .running)
+        p.stop()
+        // The stop command never ran; only the main command was launched.
+        #expect(launcher.launches.count == 1)
+        // The live process was signaled down instead.
+        #expect(launcher.last.handle.signals.first == SIGINT)
+        #expect(p.log.lines.contains { $0.contains("ITERMPLEX_BRANCH") })
+    }
+
+    @Test func blockedDaemonStopWithNoHandleSettlesIdle() {
+        let launcher = FakeProcessLauncher()
+        let config = ProcessConfig(command: "sail up -d", kind: .daemon, stop: "teardown $ITERMPLEX_BRANCH")
+        let p = ManagedProcess(
+            name: "sail", config: config, directory: dir, launcher: launcher, graceInterval: .zero,
+            variables: { [:] }
+        )
+        p.start()
+        // The start command exits after launch returns, clearing the handle, so
+        // the daemon is up with no live process to signal (the real steady state).
+        launcher.last.onExit(0)
+        #expect(p.state == .running)
+        p.stop()
+        // No handle to signal and the stop command is blocked, so it settles
+        // idle without running teardown; only the start command ever launched.
+        #expect(p.state == .idle)
+        #expect(launcher.launches.count == 1)
+        #expect(p.log.lines.contains { $0.contains("ITERMPLEX_BRANCH") })
+    }
+
+    @Test func allowEmptyVarsRunsUnresolvedStopCommand() {
+        let launcher = FakeProcessLauncher()
+        let config = ProcessConfig(
+            command: "npm run dev", kind: .longRunning, stop: "kill-branch $ITERMPLEX_BRANCH", allowEmptyVars: true
+        )
+        let p = ManagedProcess(
+            name: "p", config: config, directory: dir, launcher: launcher, graceInterval: .zero,
+            variables: { [:] }
+        )
+        p.start()
+        p.stop()
+        #expect(launcher.launches.map(\.command).contains("kill-branch $ITERMPLEX_BRANCH"))
+    }
+
+    @Test func injectsVariablesIntoStatusEnvironment() {
+        let launcher = FakeProcessLauncher()
+        let config = ProcessConfig(command: "sail up -d", kind: .daemon, stop: "sail down", status: "check $ITERMPLEX_BRANCH")
+        let p = ManagedProcess(
+            name: "sail", config: config, directory: dir, launcher: launcher,
+            variables: { ["ITERMPLEX_BRANCH": "main"] }
+        )
+        launcher.immediateExit["sail up -d"] = 0
+        p.start()
+        p.probeStatus()
+        #expect(launcher.last.command == "check $ITERMPLEX_BRANCH")
+        #expect(launcher.last.environment["ITERMPLEX_BRANCH"] == "main")
+    }
+
+    @Test func skipsStatusProbeWhenVariableUnresolved() {
+        let launcher = FakeProcessLauncher()
+        let config = ProcessConfig(command: "sail up -d", kind: .daemon, stop: "sail down", status: "check $ITERMPLEX_BRANCH")
+        let p = ManagedProcess(
+            name: "sail", config: config, directory: dir, launcher: launcher,
+            variables: { [:] }
+        )
+        launcher.immediateExit["sail up -d"] = 0
+        p.start()
+        #expect(p.state == .running)
+        let launchesBefore = launcher.launches.count
+        p.probeStatus()
+        // The probe was skipped, so no new launch and the last state stands.
+        #expect(launcher.launches.count == launchesBefore)
+        #expect(p.state == .running)
     }
 }

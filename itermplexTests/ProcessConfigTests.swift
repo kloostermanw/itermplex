@@ -17,7 +17,8 @@ import Foundation
               "auto_start": true,
               "auto_restart": false,
               "restart_when_changed": ["a", "b"],
-              "env": { "APP_ENV": "local" }
+              "env": { "APP_ENV": "local" },
+              "allow_empty_vars": true
             }
           }
         }
@@ -32,6 +33,7 @@ import Foundation
         #expect(sail.autoRestart == false)
         #expect(sail.restartWhenChanged == ["a", "b"])
         #expect(sail.env == ["APP_ENV": "local"])
+        #expect(sail.allowEmptyVars == true)
     }
 
     @Test func appliesDefaults() throws {
@@ -46,6 +48,7 @@ import Foundation
         #expect(npm.autoRestart == false)
         #expect(npm.restartWhenChanged == [])
         #expect(npm.env == [:])
+        #expect(npm.allowEmptyVars == false)
     }
 
     @Test func legacyConfigWithoutProcessesStillParses() throws {
