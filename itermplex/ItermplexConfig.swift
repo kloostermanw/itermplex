@@ -12,12 +12,14 @@ struct ItermplexConfig: Codable, Equatable {
     var agents: [Agent]
     var iterm: [String]
     var processes: [String: ProcessConfig]?
+    var tests: [String: TestConfig]?
 
-    init(name: String?, agents: [Agent], iterm: [String], processes: [String: ProcessConfig]? = nil) {
+    init(name: String?, agents: [Agent], iterm: [String], processes: [String: ProcessConfig]? = nil, tests: [String: TestConfig]? = nil) {
         self.name = name
         self.agents = agents
         self.iterm = iterm
         self.processes = processes
+        self.tests = tests
     }
 
     static func parse(_ data: Data) throws -> ItermplexConfig {

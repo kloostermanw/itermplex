@@ -46,4 +46,35 @@ import Foundation
         let restored = try ItermplexConfig.parse(config.encoded())
         #expect(restored.agents.map(\.slot) == ["b", "a"])
     }
+
+    @Test func parsesTestsSection() throws {
+        let json = Data("""
+        {
+          "agents": [], "iterm": [],
+          "tests": {
+            "phpstan": { "command": "vendor/bin/phpstan analyse" },
+            "php-cs-fixer": { "command": "php-cs-fixer fix --dry-run", "allow_empty_vars": true }
+          }
+        }
+        """.utf8)
+        let config = try ItermplexConfig.parse(json)
+        #expect(config.tests?["phpstan"]?.command == "vendor/bin/phpstan analyse")
+        #expect(config.tests?["php-cs-fixer"]?.allowEmptyVars == true)
+    }
+
+    @Test func absentTestsSectionIsNil() throws {
+        let json = Data("""
+        { "name": "x", "agents": [], "iterm": [] }
+        """.utf8)
+        #expect(try ItermplexConfig.parse(json).tests == nil)
+    }
+
+    @Test func roundTripsTestsSection() throws {
+        let config = ItermplexConfig(
+            name: nil, agents: [], iterm: [],
+            tests: ["phpunit": TestConfig(command: "php artisan test")]
+        )
+        let restored = try ItermplexConfig.parse(config.encoded())
+        #expect(restored == config)
+    }
 }
