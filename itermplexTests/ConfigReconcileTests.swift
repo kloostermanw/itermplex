@@ -15,6 +15,13 @@ import Foundation
         #expect(config.iterm == ["Terminal 1"])
     }
 
+    @Test func buildsConfigWithTests() {
+        let rows = [TerminalRef(label: "Terminal 1", sessionId: "s1", kind: .terminal, slot: "Terminal 1")]
+        let tests = ["phpstan": TestConfig(command: "phpstan analyse")]
+        let config = ConfigReconcile.config(from: rows, name: nil, tests: tests)
+        #expect(config.tests == tests)
+    }
+
     @Test func importCreatesEmptyRowsInFileOrder() {
         let config = ItermplexConfig(
             name: nil,

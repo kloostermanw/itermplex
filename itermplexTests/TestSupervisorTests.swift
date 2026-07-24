@@ -102,6 +102,18 @@ import Foundation
         #expect(sup.test(projectId: pid, name: "phpstan")?.state == .idle)
     }
 
+    @Test func changedFingerprintMakesTestRunViaRunAllStale() {
+        let launcher = FakeProcessLauncher()
+        let sup = TestSupervisor(launcher: launcher)
+        sup.apply(config(["phpstan": TestConfig(command: "phpstan")]), projectId: pid, directory: dir)
+        sup.applyWorkingTreeFingerprint("fp1", projectId: pid)
+        sup.runAll(projectId: pid)
+        launcher.last.onExit(0)
+        #expect(sup.test(projectId: pid, name: "phpstan")?.state == .finished)
+        sup.applyWorkingTreeFingerprint("fp2", projectId: pid) // tree changed
+        #expect(sup.test(projectId: pid, name: "phpstan")?.state == .idle)
+    }
+
     @Test func sameFingerprintKeepsPassedTestFresh() {
         let launcher = FakeProcessLauncher()
         let sup = TestSupervisor(launcher: launcher)
