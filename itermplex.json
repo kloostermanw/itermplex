@@ -22,5 +22,13 @@
 
       ]
     }
+  },
+  "tests" : {
+    "build" : {
+      "command" : "xcodebuild -scheme itermplex -destination 'platform=macOS' build"
+    },
+    "unit-tests" : {
+      "command" : "xcodebuild -scheme itermplex -destination 'platform=macOS' test"
+    }
   }
 }
