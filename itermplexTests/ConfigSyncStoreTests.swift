@@ -336,7 +336,11 @@ import Foundation
             onProcessStop: { _ in },
             onProcessRestart: { _ in },
             onProcessKill: { _ in },
-            onOpenProcessLog: { _ in }
+            onOpenProcessLog: { _ in },
+            tests: [],
+            onTestRun: { _ in },
+            onTestRunAll: {},
+            onOpenTestLog: { _ in }
         )
     }
 }
