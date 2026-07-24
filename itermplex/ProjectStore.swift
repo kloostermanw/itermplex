@@ -736,7 +736,8 @@ final class ProjectStore {
         let config = ConfigReconcile.config(
             from: projects[index].terminals,
             name: projects[index].configName,
-            processes: projects[index].configProcesses
+            processes: projects[index].configProcesses,
+            tests: projects[index].configTests
         )
         do {
             lastConfigData[project.id] = try ConfigFile.write(config, in: projects[index].url)
@@ -754,7 +755,8 @@ final class ProjectStore {
         let project = projects[index]
         guard ConfigFile.exists(in: project.url) else { return }
         let config = ConfigReconcile.config(
-            from: project.terminals, name: project.configName, processes: project.configProcesses
+            from: project.terminals, name: project.configName, processes: project.configProcesses,
+            tests: project.configTests
         )
         guard let data = try? config.encoded() else { return }
         if lastConfigData[projectId] == data { return }

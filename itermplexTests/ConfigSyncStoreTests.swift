@@ -290,6 +290,29 @@ import Foundation
         #expect(config?.iterm == ["server"])
     }
 
+    @Test func testsBlockSurvivesConfigEmit() async throws {
+        let fake = FakeTerminalService()
+        fake.handles = [TerminalHandle(sessionId: "s1", windowId: "w1")]
+        let store = ProjectStore(defaults: makeDefaults(), service: fake)
+        let folder = tempFolder()
+        let tests = ["phpstan": TestConfig(command: "phpstan analyse")]
+        try ConfigFile.write(
+            ItermplexConfig(name: nil, agents: [], iterm: ["Terminal 1"], tests: tests),
+            in: folder
+        )
+        store.addProject(url: folder)
+        #expect(store.projects[0].configTests == tests)
+
+        // Trigger an emit (a structural mutation with sync already on, since
+        // adding a project with an existing config file scaffolds rows but
+        // doesn't itself write).
+        store.rename(store.projects[0].terminals[0], in: store.projects[0], to: "server")
+
+        let config = try ConfigFile.read(in: folder)
+        #expect(config?.tests == tests)
+        #expect(config?.iterm == ["server"])
+    }
+
     @Test func renamingClaudeKeepsSlotStable() async throws {
         let fake = FakeTerminalService()
         fake.handles = [TerminalHandle(sessionId: "s1", windowId: "w1")]

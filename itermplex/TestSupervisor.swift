@@ -80,7 +80,7 @@ final class TestSupervisor {
     }
 
     func runAll(projectId: UUID) {
-        for test in byProject[projectId] ?? [] { test.start() }
+        for test in byProject[projectId] ?? [] { run(projectId: projectId, name: test.name) }
     }
 
     /// Records the workspace's latest working-tree fingerprint and stales any
@@ -106,5 +106,7 @@ final class TestSupervisor {
     func removeWorkspace(_ projectId: UUID) {
         byProject[projectId]?.forEach { $0.kill() }
         byProject[projectId] = nil
+        currentFingerprint[projectId] = nil
+        runFingerprint[projectId] = nil
     }
 }
