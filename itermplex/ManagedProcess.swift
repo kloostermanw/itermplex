@@ -153,6 +153,14 @@ final class ManagedProcess: Identifiable {
         if isAlive { state = .orphaned }
     }
 
+    /// Marks a passed run stale: a `.finished` process returns to `.idle`. Any
+    /// other state (running, failed, ...) is left unchanged. Used by the test
+    /// supervisor when the working tree changes so a green test goes neutral,
+    /// while a failing test stays red until it next passes.
+    func resetToIdleIfFinished() {
+        if state == .finished { state = .idle }
+    }
+
     // MARK: Internals
 
     private var pendingRestart = false

@@ -74,6 +74,26 @@ final class FakeProcessLauncher: @preconcurrency ProcessLaunching, @unchecked Se
         #expect(p.state == .failed(3))
     }
 
+    @Test func resetToIdleIfFinishedClearsPassedRun() {
+        let launcher = FakeProcessLauncher()
+        let p = ManagedProcess(name: "t", config: ProcessConfig(command: "phpunit", kind: .shortRunning), directory: dir, launcher: launcher)
+        p.start()
+        launcher.last.onExit(0)
+        #expect(p.state == .finished)
+        p.resetToIdleIfFinished()
+        #expect(p.state == .idle)
+    }
+
+    @Test func resetToIdleIfFinishedLeavesFailedRun() {
+        let launcher = FakeProcessLauncher()
+        let p = ManagedProcess(name: "t", config: ProcessConfig(command: "phpunit", kind: .shortRunning), directory: dir, launcher: launcher)
+        p.start()
+        launcher.last.onExit(2)
+        #expect(p.state == .failed(2))
+        p.resetToIdleIfFinished()
+        #expect(p.state == .failed(2))
+    }
+
     @Test func longRunningStopWithoutStopCommandSendsSIGINT() {
         let launcher = FakeProcessLauncher()
         let p = ManagedProcess(name: "npm", config: ProcessConfig(command: "npm run dev", kind: .longRunning), directory: dir, launcher: launcher, graceInterval: .zero)
