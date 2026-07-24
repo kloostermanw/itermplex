@@ -99,4 +99,43 @@ struct FakeCommandRunner: CommandRunning {
         #expect(checks?.skipped == 1)
         #expect(checks?.hasFailures == true)
     }
+
+    @Test func fingerprintStableForSameTreeState() async {
+        let svc = service { _, args in
+            if args.contains("--is-inside-work-tree") { return CommandResult(stdout: "true\n", stderr: "", status: 0) }
+            if args.contains("status") { return CommandResult(stdout: " M app/Foo.php\n", stderr: "", status: 0) }
+            if args.contains("diff") { return CommandResult(stdout: "@@ -1 +1 @@\n-old\n+new\n", stderr: "", status: 0) }
+            return CommandResult(stdout: "", stderr: "", status: 0)
+        }
+        let folder = URL(fileURLWithPath: "/tmp/x")
+        let a = await svc.workingTreeFingerprint(for: folder)
+        let b = await svc.workingTreeFingerprint(for: folder)
+        #expect(a != nil)
+        #expect(a == b)
+    }
+
+    @Test func fingerprintChangesWhenDiffChanges() async {
+        let before = "@@ -1 +1 @@\n-old\n+new\n"
+        let after = "@@ -1 +2 @@\n-old\n+newer\n+extra\n" // an edit to the already-modified file
+
+        func makeService(withDiff diff: String) -> GitInfoService {
+            service { _, args in
+                if args.contains("--is-inside-work-tree") { return CommandResult(stdout: "true\n", stderr: "", status: 0) }
+                if args.contains("status") { return CommandResult(stdout: " M app/Foo.php\n", stderr: "", status: 0) }
+                if args.contains("diff") { return CommandResult(stdout: diff, stderr: "", status: 0) }
+                return CommandResult(stdout: "", stderr: "", status: 0)
+            }
+        }
+
+        let folder = URL(fileURLWithPath: "/tmp/x")
+        let beforeFingerprint = await makeService(withDiff: before).workingTreeFingerprint(for: folder)
+        let afterFingerprint = await makeService(withDiff: after).workingTreeFingerprint(for: folder)
+        #expect(beforeFingerprint != afterFingerprint)
+    }
+
+    @Test func fingerprintNilForNonRepo() async {
+        let svc = service { _, _ in CommandResult(stdout: "", stderr: "fatal: not a git repository", status: 128) }
+        let fp = await svc.workingTreeFingerprint(for: URL(fileURLWithPath: "/tmp/x"))
+        #expect(fp == nil)
+    }
 }
