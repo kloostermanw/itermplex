@@ -1,0 +1,87 @@
+import Testing
+import Foundation
+@testable import itermplex
+
+@MainActor
+@Suite struct TestSupervisorTests {
+    let dir = URL(fileURLWithPath: "/tmp")
+    let pid = UUID()
+
+    private func config(_ tests: [String: TestConfig]) -> ItermplexConfig {
+        ItermplexConfig(name: nil, agents: [], iterm: [], tests: tests)
+    }
+
+    @Test func applyAddsTestsSortedByName() {
+        let sup = TestSupervisor(launcher: FakeProcessLauncher())
+        sup.apply(config(["zeta": TestConfig(command: "z"), "alpha": TestConfig(command: "a")]), projectId: pid, directory: dir)
+        #expect(sup.tests(for: pid).map(\.name) == ["alpha", "zeta"])
+    }
+
+    @Test func applyUpdatesAndDropsDefinitions() {
+        let sup = TestSupervisor(launcher: FakeProcessLauncher())
+        sup.apply(config(["a": TestConfig(command: "a"), "b": TestConfig(command: "b")]), projectId: pid, directory: dir)
+        sup.apply(config(["a": TestConfig(command: "a2")]), projectId: pid, directory: dir)
+        #expect(sup.tests(for: pid).map(\.name) == ["a"])
+        #expect(sup.test(projectId: pid, name: "a")?.config.command == "a2")
+    }
+
+    @Test func applyKillsARunningTestWhenItsDefinitionIsDropped() {
+        let launcher = FakeProcessLauncher()
+        let sup = TestSupervisor(launcher: launcher)
+        sup.apply(config(["a": TestConfig(command: "a"), "b": TestConfig(command: "b")]), projectId: pid, directory: dir)
+        sup.run(projectId: pid, name: "b")
+        #expect(sup.test(projectId: pid, name: "b")?.state == .running)
+        sup.apply(config(["a": TestConfig(command: "a")]), projectId: pid, directory: dir)
+        #expect(launcher.last.handle.signals.contains(SIGKILL))
+        #expect(sup.tests(for: pid).map(\.name) == ["a"])
+    }
+
+    @Test func testsDoNotAutoStart() {
+        let launcher = FakeProcessLauncher()
+        let sup = TestSupervisor(launcher: launcher)
+        sup.apply(config(["phpstan": TestConfig(command: "phpstan")]), projectId: pid, directory: dir)
+        #expect(launcher.launches.isEmpty)
+        #expect(sup.test(projectId: pid, name: "phpstan")?.state == .idle)
+    }
+
+    @Test func runStartsOneTest() {
+        let launcher = FakeProcessLauncher()
+        let sup = TestSupervisor(launcher: launcher)
+        sup.apply(config(["phpstan": TestConfig(command: "phpstan analyse")]), projectId: pid, directory: dir)
+        sup.run(projectId: pid, name: "phpstan")
+        #expect(launcher.launches.map(\.command).contains("phpstan analyse"))
+        #expect(sup.test(projectId: pid, name: "phpstan")?.state == .running)
+    }
+
+    @Test func runAllStartsEveryTest() {
+        let launcher = FakeProcessLauncher()
+        let sup = TestSupervisor(launcher: launcher)
+        sup.apply(config(["a": TestConfig(command: "cmd-a"), "b": TestConfig(command: "cmd-b")]), projectId: pid, directory: dir)
+        sup.runAll(projectId: pid)
+        #expect(launcher.launches.map(\.command).sorted() == ["cmd-a", "cmd-b"])
+        #expect(sup.tests(for: pid).allSatisfy { $0.state == .running })
+    }
+
+    @Test func appliesVariablesToTestLaunch() {
+        let launcher = FakeProcessLauncher()
+        let sup = TestSupervisor(launcher: launcher)
+        sup.apply(
+            config(["t": TestConfig(command: "run")]),
+            projectId: pid, directory: dir,
+            variables: { ["ITERMPLEX_WORKSPACE_PATH": "/repos/app"] }
+        )
+        sup.run(projectId: pid, name: "t")
+        #expect(launcher.last.environment["ITERMPLEX_WORKSPACE_PATH"] == "/repos/app")
+    }
+
+    @Test func removeWorkspaceKillsRunningTestsAndDropsThem() {
+        let launcher = FakeProcessLauncher()
+        let sup = TestSupervisor(launcher: launcher)
+        sup.apply(config(["t": TestConfig(command: "run")]), projectId: pid, directory: dir)
+        sup.run(projectId: pid, name: "t")
+        #expect(sup.test(projectId: pid, name: "t")?.state == .running)
+        sup.removeWorkspace(pid)
+        #expect(launcher.last.handle.signals.contains(SIGKILL))
+        #expect(sup.tests(for: pid).isEmpty)
+    }
+}
