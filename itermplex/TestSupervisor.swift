@@ -6,13 +6,21 @@ import Observation
 /// `ManagedProcess` in `short_running` mode; this type keeps them separate from
 /// the regular process rows and adds manual run / run-all controls. The file is
 /// the source of truth; this type never writes definitions back. Staleness (a
-/// passing test going neutral when the working tree changes) is added in a later
-/// task via `applyWorkingTreeFingerprint`.
+/// passing test going neutral when the working tree changes) is tracked via
+/// `applyWorkingTreeFingerprint`.
 @MainActor
 @Observable
 final class TestSupervisor {
     private var byProject: [UUID: [ManagedProcess]] = [:]
     private let launcher: ProcessLaunching
+
+    /// Latest working-tree fingerprint observed per workspace (nil until the
+    /// first `.workingTree` check runs).
+    private var currentFingerprint: [UUID: String] = [:]
+    /// The fingerprint stamped when each test was last run (the working-tree
+    /// state that run reflects). Keyed by project then test name. A nil entry
+    /// means "not yet baselined".
+    private var runFingerprint: [UUID: [String: String]] = [:]
 
     init(launcher: ProcessLaunching = PTYProcessLauncher()) {
         self.launcher = launcher
@@ -66,11 +74,30 @@ final class TestSupervisor {
     }
 
     func run(projectId: UUID, name: String) {
-        test(projectId: projectId, name: name)?.start()
+        guard let test = test(projectId: projectId, name: name) else { return }
+        runFingerprint[projectId, default: [:]][name] = currentFingerprint[projectId]
+        test.start()
     }
 
     func runAll(projectId: UUID) {
         for test in byProject[projectId] ?? [] { test.start() }
+    }
+
+    /// Records the workspace's latest working-tree fingerprint and stales any
+    /// passing test whose baseline differs. A `.finished` test with no baseline
+    /// yet adopts this fingerprint (stays fresh) rather than being reset, so a
+    /// test that passed before the first fingerprint was known is not spuriously
+    /// staled. Failing tests are never touched here; they clear only by passing.
+    func applyWorkingTreeFingerprint(_ fingerprint: String, projectId: UUID) {
+        currentFingerprint[projectId] = fingerprint
+        for test in byProject[projectId] ?? [] where test.state == .finished {
+            let stamped = runFingerprint[projectId]?[test.name]
+            if stamped == nil {
+                runFingerprint[projectId, default: [:]][test.name] = fingerprint
+            } else if stamped != fingerprint {
+                test.resetToIdleIfFinished()
+            }
+        }
     }
 
     /// A `TestConfig` never defines a `stop` command, so `kill()` alone is the
