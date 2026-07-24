@@ -6,10 +6,18 @@ view so the intended structure stays readable without running the app.
 ## Log window
 
 Opened via `openWindow(id: "process-log", value:)` with a `ProcessLogWindowID`
-(project id + process name). One window per process; the window title is the
-process name. The body is a scrollable, monospaced, read-only, selectable
-dump of `ManagedProcess.log.lines`, auto-scrolled to the bottom whenever a new
-line arrives.
+(project id, process name, and an `isTest` flag). One window per process; the
+window title is the process name. The body is a scrollable, monospaced,
+read-only, selectable dump of `ManagedProcess.log.lines`, auto-scrolled to the
+bottom whenever a new line arrives.
+
+`isTest` selects which namespace the name is resolved against: `false` (the
+default) looks the process up via `store.processes.process(projectId:name:)`
+(a managed process, opened from `ProcessRowView`'s Open log action); `true`
+looks it up via `store.testSupervisor.test(projectId:name:)` (a test process,
+opened from `TestProcessesLineView`'s Open log action). Processes and tests
+are separate namespaces that may share a name, so the flag disambiguates which
+one a given window shows.
 
 ```
 ┌ npm ──────────────────────────────────────────────────────────────┐
