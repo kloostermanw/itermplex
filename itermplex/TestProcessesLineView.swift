@@ -1,38 +1,42 @@
 import SwiftUI
 
-/// A horizontal, wrapping line of test-process buttons plus a trailing ALL
-/// button. Each button's border color reflects the last outcome (green passed,
-/// red failed, neutral for never-run/stale) and shows a spinner while running.
-/// Clicking a button runs that test; ALL runs every test. Rendered only when the
-/// workspace defines at least one test (the caller guards on `!tests.isEmpty`).
+/// A line of test-process buttons with an `All` button pinned to the top right.
+/// The per-test buttons flow (and wrap) on the left; each button's border color
+/// reflects the last outcome (green passed, red failed, neutral for
+/// never-run/stale) and shows a spinner while running. Clicking a button runs
+/// that test; `All` runs every test (and never shows a spinner itself). Rendered
+/// only when the workspace defines at least one test (the caller guards on
+/// `!tests.isEmpty`).
 struct TestProcessesLineView: View {
     let tests: [ManagedProcess]
     let onRun: (ManagedProcess) -> Void
     let onRunAll: () -> Void
     let onOpenLog: (ManagedProcess) -> Void
 
-    private var anyRunning: Bool { tests.contains { processIsRunning(for: $0.state) } }
-
     var body: some View {
-        TestFlowLayout(spacing: 6) {
-            ForEach(tests) { test in
-                TestButton(
-                    label: test.name,
-                    appearance: testButtonAppearance(for: test.state),
-                    action: { onRun(test) }
-                )
-                .contextMenu {
-                    Button("Run") { onRun(test) }
-                    if processIsRunning(for: test.state) {
-                        Button("Cancel") { test.kill() }
+        HStack(alignment: .top, spacing: 6) {
+            TestFlowLayout(spacing: 6) {
+                ForEach(tests) { test in
+                    TestButton(
+                        label: test.name,
+                        appearance: testButtonAppearance(for: test.state),
+                        action: { onRun(test) }
+                    )
+                    .contextMenu {
+                        Button("Run") { onRun(test) }
+                        if processIsRunning(for: test.state) {
+                            Button("Cancel") { test.kill() }
+                        }
+                        Divider()
+                        Button("Open log") { onOpenLog(test) }
                     }
-                    Divider()
-                    Button("Open log") { onOpenLog(test) }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
             TestButton(
-                label: "ALL",
-                appearance: TestButtonAppearance(style: .neutral, running: anyRunning),
+                label: "All",
+                appearance: TestButtonAppearance(style: .neutral, running: false),
                 action: onRunAll
             )
         }
@@ -56,7 +60,7 @@ private struct TestButton: View {
                     .font(.caption)
                     .lineLimit(1)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
