@@ -36,7 +36,7 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_NSAppleEventsUsageDescription: "itermplex controls iTerm2 to open and focus terminals."
-        MARKETING_VERSION: "1.1.1"
+        MARKETING_VERSION: "1.1.2"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
         CODE_SIGN_IDENTITY: "-"

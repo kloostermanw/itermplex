@@ -26,6 +26,10 @@ struct WorkspaceCardView: View {
     let onProcessRestart: (ManagedProcess) -> Void
     let onProcessKill: (ManagedProcess) -> Void
     let onOpenProcessLog: (ManagedProcess) -> Void
+    let tests: [ManagedProcess]
+    let onTestRun: (ManagedProcess) -> Void
+    let onTestRunAll: () -> Void
+    let onOpenTestLog: (ManagedProcess) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -44,6 +48,15 @@ struct WorkspaceCardView: View {
                 if let checks = gitInfo?.checks {
                     ChecksLineView(summary: checks)
                         .padding(.leading, 24)
+                }
+                if !tests.isEmpty {
+                    TestProcessesLineView(
+                        tests: tests,
+                        onRun: onTestRun,
+                        onRunAll: onTestRunAll,
+                        onOpenLog: onOpenTestLog
+                    )
+                    .padding(.leading, 24)
                 }
                 children
             }

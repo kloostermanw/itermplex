@@ -9,7 +9,10 @@ import Testing
     }
 
     @Test func baseTierByCollapsed() {
-        for kind in CheckKind.allCases {
+        // .workingTree is intentionally excluded: it is local-only and always
+        // runs Fast while expanded regardless of overlays (see
+        // workingTreeIsFastWhenExpanded/workingTreeIsSlowWhenCollapsed below).
+        for kind in CheckKind.allCases where kind != .workingTree {
             #expect(checkTier(for: kind, collapsed: true, ciPending: false, needsAttention: false) == .slow)
             #expect(checkTier(for: kind, collapsed: false, ciPending: false, needsAttention: false) == .normal)
         }
@@ -32,5 +35,13 @@ import Testing
         #expect(checkTier(for: .ciChecks, collapsed: true, ciPending: true, needsAttention: true) == .fast)
         // expanded CI both overlays: normal -> fast -> fast
         #expect(checkTier(for: .ciChecks, collapsed: false, ciPending: true, needsAttention: true) == .fast)
+    }
+
+    @Test func workingTreeIsFastWhenExpanded() {
+        #expect(checkTier(for: .workingTree, collapsed: false, ciPending: false, needsAttention: false) == .fast)
+    }
+
+    @Test func workingTreeIsSlowWhenCollapsed() {
+        #expect(checkTier(for: .workingTree, collapsed: true, ciPending: false, needsAttention: false) == .slow)
     }
 }

@@ -7,8 +7,8 @@ so the intended structure stays readable without running the app.
 
 A project renders as a `WorkspaceCardView`. The header carries the collapse
 chevron, the project name, and the git ahead/behind indicators. Below the header
-sit the Issue/PR pills, the CI checks line, the Processes group, and the
-terminal tree.
+sit the Issue/PR pills, the CI checks line, the test buttons line, the
+Processes group, and the terminal tree.
 
 The ahead/behind indicators are two stacked, right aligned rows. Each row is
 labeled with the remote ref it compares against: the base row against the remote
@@ -21,6 +21,7 @@ default branch (`origin/develop`), the upstream row against the branch upstream
 │                                      origin/feature/issue-15   ↑1 ↓0 │
 │   (Issue #15)  (PR #16)                                             │
 │   1 failing, 1 successfull checks                                   │
+│   [phpunit] [feature-tests]                    [All]  (border=pass) │
 │   │  ● queue          (filled green = running)                      │
 │   │  ○ phpunit        (open green = passed)                         │
 │   │  ○ npm            (open red = crashed)                          │
@@ -45,6 +46,15 @@ Legend:
   `ChecksSummary.summaryText`. The line color follows `ChecksSummary.status`:
   red on failures, yellow while checks are still pending (nothing failed yet),
   green when everything completed without failures.
+- `[phpunit] [feature-tests] ... [All]`: `TestProcessesLineView`, the test
+  buttons flowing and wrapping on the left with an `All` button pinned to the
+  top right. Rendered only when the workspace defines at least one test
+  (`!tests.isEmpty`); each button's border reflects the last outcome (green
+  passed, red failed, neutral for never-run/stale) with a spinner while running.
+  Clicking a test button runs that test (`onTestRun`); `All` runs every test
+  (`onTestRunAll`) and never shows a spinner itself; a button's context menu
+  offers Run, Cancel (while running), and Open log (`onOpenTestLog`, opens a
+  `ProcessLogWindow` with `isTest: true`). See `TestProcessesLineView.md`.
 - `│`: the leading rule that groups the process and terminal rows
   (`WorkspaceCardView.children`).
 - `●` / `○`: process status dot (`ProcessRowView`) — filled = running, open =

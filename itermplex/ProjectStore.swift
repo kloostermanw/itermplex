@@ -69,6 +69,7 @@ final class ProjectStore {
     private let service: TerminalService
     private let gitProvider: GitInfoProviding
     let processes: ProcessSupervisor
+    let testSupervisor: TestSupervisor
     private let storageKey = "itermplex.projects.bookmarks"
     private let badgeKey = "itermplex.showWorkspaceBadge"
     private let intervalsKey = "itermplex.checkIntervals"
@@ -190,12 +191,14 @@ final class ProjectStore {
         defaults: UserDefaults = .standard,
         service: TerminalService = ITermBridge(),
         gitProvider: GitInfoProviding = GitInfoService(),
-        processSupervisor: ProcessSupervisor = ProcessSupervisor()
+        processSupervisor: ProcessSupervisor = ProcessSupervisor(),
+        testSupervisor: TestSupervisor = TestSupervisor()
     ) {
         self.defaults = defaults
         self.service = service
         self.gitProvider = gitProvider
         self.processes = processSupervisor
+        self.testSupervisor = testSupervisor
         self.showWorkspaceBadge = defaults.bool(forKey: badgeKey)
         if let arr = defaults.array(forKey: intervalsKey) as? [Int], arr.count == 3 {
             self.checkIntervals = CheckIntervals(fast: arr[0], normal: arr[1], slow: arr[2]).clamped()
@@ -279,6 +282,7 @@ final class ProjectStore {
         stopWatching(project.id)
         stopGitWatching(project.id)
         processes.removeWorkspace(project.id)
+        testSupervisor.removeWorkspace(project.id)
         lastConfigData[project.id] = nil
         configChangedOnDisk.remove(project.id)
         schedule.forget(projectId: project.id)
@@ -642,7 +646,16 @@ final class ProjectStore {
             gitInfo[key.projectId] = info
         case .processStatus:
             processes.refreshStatusesForWorkspace(key.projectId)
+        case .workingTree:
+            guard let fingerprint = await gitProvider.workingTreeFingerprint(for: url) else { return }
+            forwardWorkingTreeFingerprint(fingerprint, projectId: key.projectId)
         }
+    }
+
+    /// Forwards a freshly-computed working-tree fingerprint to the test
+    /// supervisor, which stales any passing test whose baseline differs.
+    func forwardWorkingTreeFingerprint(_ fingerprint: String, projectId: UUID) {
+        testSupervisor.applyWorkingTreeFingerprint(fingerprint, projectId: projectId)
     }
 
     /// A local `.git` change (commit, checkout, branch edit) was observed by the
@@ -723,7 +736,8 @@ final class ProjectStore {
         let config = ConfigReconcile.config(
             from: projects[index].terminals,
             name: projects[index].configName,
-            processes: projects[index].configProcesses
+            processes: projects[index].configProcesses,
+            tests: projects[index].configTests
         )
         do {
             lastConfigData[project.id] = try ConfigFile.write(config, in: projects[index].url)
@@ -741,7 +755,8 @@ final class ProjectStore {
         let project = projects[index]
         guard ConfigFile.exists(in: project.url) else { return }
         let config = ConfigReconcile.config(
-            from: project.terminals, name: project.configName, processes: project.configProcesses
+            from: project.terminals, name: project.configName, processes: project.configProcesses,
+            tests: project.configTests
         )
         guard let data = try? config.encoded() else { return }
         if lastConfigData[projectId] == data { return }
@@ -772,7 +787,11 @@ final class ProjectStore {
         projects[index].terminals = result.terminals
         projects[index].configName = config.name
         projects[index].configProcesses = config.processes
+        projects[index].configTests = config.tests
         processes.apply(config, projectId: projectId, directory: url) { [weak self] in
+            self?.processVariables(for: projectId) ?? [:]
+        }
+        testSupervisor.apply(config, projectId: projectId, directory: url) { [weak self] in
             self?.processVariables(for: projectId) ?? [:]
         }
         localOnlyTerminals.formUnion(result.localOnly)

@@ -2,7 +2,8 @@
 
 Each workspace can hold one `itermplex.json` in its root folder. It is the per
 workspace configuration file: it names the workspace, lists the terminals and
-Claude agents to lay out, and declares the supervised processes iTermPlex runs.
+Claude agents to lay out, and declares the supervised processes and
+test-processes iTermPlex runs.
 
 This document covers the file format and how the file is created and maintained.
 For how processes actually behave once declared (kinds, status dots, the log
@@ -58,7 +59,8 @@ A minimal file:
 {
   "agents": [],
   "iterm": [],
-  "processes": {}
+  "processes": {},
+  "tests": {}
 }
 ```
 
@@ -70,6 +72,7 @@ A minimal file:
 | `agents` | array | `[]` | Claude agent sessions to lay out, in order. |
 | `iterm` | array | `[]` | iTerm2 terminal sessions to lay out, in order. |
 | `processes` | object | `{}` | Supervised processes, keyed by name. |
+| `tests` | object | `{}` | Test-processes, keyed by name (run-to-completion checks). |
 
 ### `name`
 
@@ -140,12 +143,62 @@ Example:
 See the README "Processes" section for how each kind runs, the status dot, the log
 window, and the shell environment.
 
+### `tests`
+
+An object keyed by test name. Each value is a test definition: a run to
+completion check with no `kind`, `stop`, `status`, or `auto_start`. Exit code
+0 means the test passed; any non zero exit code means it failed. Field
+reference:
+
+| Field | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `command` | string | required | The command to run, in the workspace directory. |
+| `env` | object | `{}` | Extra environment variables. |
+| `allow_empty_vars` | bool | `false` | Run even when a referenced `ITERMPLEX_*` variable has no value. |
+
+Tests are not shown as rows. They appear in the workspace card as a single
+line of buttons, one per test plus a trailing `ALL` button. A button's border
+color reflects the outcome of its last run: green for passed, red for failed,
+and neutral (gray) when the test has never run or has gone stale. A spinner
+overlays the button while that test is running. Clicking a button runs that
+test; clicking `ALL` runs every test in parallel. Right clicking a button
+opens a context menu with Run, Cancel (while the test is running), and Open
+log, which opens the same log window used for processes.
+
+A passing (green) test goes stale (back to neutral) when the working tree
+changes, since its result no longer reflects the current code. Staleness is
+computed from a fingerprint of `git status` plus `git diff`, respecting
+`.gitignore`, refreshed on the app's fast poll tier while the card is
+expanded. A failing (red) test keeps its red state until it passes again;
+only a pass can be invalidated by a working tree change.
+
+Known limitation: editing the contents of an already untracked file does not
+mark tests stale, because git reports an untracked file only as `?? path`
+regardless of what changed inside it. Adding or removing an untracked file
+does change the fingerprint and does mark tests stale.
+
+Example:
+
+```json
+"tests": {
+  "php-cs-fixer": { "command": "php-cs-fixer fix -v --dry-run" },
+  "phpstan": { "command": "vendor/bin/phpstan analyse" },
+  "rector": { "command": "vendor/bin/rector --dry-run" },
+  "phpunit": { "command": "php artisan test" }
+}
+```
+
 ## Variables
 
 iTermPlex injects workspace variables into every process as environment variables
 under the `ITERMPLEX_` prefix. Reference them in `command`, `stop`, and `status`
 with normal shell syntax (`$ITERMPLEX_BRANCH` or `${ITERMPLEX_BRANCH}`); the login
 shell expands them when it runs the command.
+
+The same injection and blocking rules apply to a test's `command`: a test can
+reference any `ITERMPLEX_*` variable, and `allow_empty_vars` controls whether
+a missing one blocks the run or expands to empty, exactly as it does for a
+process.
 
 ```json
 "processes": {
@@ -214,6 +267,10 @@ evaluated).
       "kind": "short_running",
       "allow_empty_vars": true
     }
+  },
+  "tests": {
+    "phpstan": { "command": "vendor/bin/phpstan analyse" },
+    "phpunit": { "command": "php artisan test" }
   }
 }
 ```
