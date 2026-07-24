@@ -84,4 +84,57 @@ import Foundation
         #expect(launcher.last.handle.signals.contains(SIGKILL))
         #expect(sup.tests(for: pid).isEmpty)
     }
+
+    private func passedTest(_ sup: TestSupervisor, launcher: FakeProcessLauncher, name: String) {
+        sup.run(projectId: pid, name: name)
+        launcher.launches.first { $0.command == sup.test(projectId: pid, name: name)?.config.command }?.onExit(0)
+    }
+
+    @Test func changedFingerprintMakesPassedTestStale() {
+        let launcher = FakeProcessLauncher()
+        let sup = TestSupervisor(launcher: launcher)
+        sup.apply(config(["phpstan": TestConfig(command: "phpstan")]), projectId: pid, directory: dir)
+        sup.applyWorkingTreeFingerprint("fp1", projectId: pid)
+        sup.run(projectId: pid, name: "phpstan")
+        launcher.last.onExit(0)
+        #expect(sup.test(projectId: pid, name: "phpstan")?.state == .finished)
+        sup.applyWorkingTreeFingerprint("fp2", projectId: pid) // tree changed
+        #expect(sup.test(projectId: pid, name: "phpstan")?.state == .idle)
+    }
+
+    @Test func sameFingerprintKeepsPassedTestFresh() {
+        let launcher = FakeProcessLauncher()
+        let sup = TestSupervisor(launcher: launcher)
+        sup.apply(config(["phpstan": TestConfig(command: "phpstan")]), projectId: pid, directory: dir)
+        sup.applyWorkingTreeFingerprint("fp1", projectId: pid)
+        sup.run(projectId: pid, name: "phpstan")
+        launcher.last.onExit(0)
+        sup.applyWorkingTreeFingerprint("fp1", projectId: pid) // unchanged
+        #expect(sup.test(projectId: pid, name: "phpstan")?.state == .finished)
+    }
+
+    @Test func failedTestIsNotResetByFingerprintChange() {
+        let launcher = FakeProcessLauncher()
+        let sup = TestSupervisor(launcher: launcher)
+        sup.apply(config(["phpstan": TestConfig(command: "phpstan")]), projectId: pid, directory: dir)
+        sup.applyWorkingTreeFingerprint("fp1", projectId: pid)
+        sup.run(projectId: pid, name: "phpstan")
+        launcher.last.onExit(1) // failed
+        sup.applyWorkingTreeFingerprint("fp2", projectId: pid)
+        #expect(sup.test(projectId: pid, name: "phpstan")?.state == .failed(1))
+    }
+
+    @Test func firstFingerprintAfterPassIsAdoptedAsBaseline() {
+        // Test passes before any fingerprint is known (nil stamp); the first
+        // observed fingerprint is adopted, so the test is not spuriously staled.
+        let launcher = FakeProcessLauncher()
+        let sup = TestSupervisor(launcher: launcher)
+        sup.apply(config(["phpstan": TestConfig(command: "phpstan")]), projectId: pid, directory: dir)
+        sup.run(projectId: pid, name: "phpstan")
+        launcher.last.onExit(0)
+        sup.applyWorkingTreeFingerprint("fp1", projectId: pid) // first fingerprint ever
+        #expect(sup.test(projectId: pid, name: "phpstan")?.state == .finished)
+        sup.applyWorkingTreeFingerprint("fp2", projectId: pid) // now a real change
+        #expect(sup.test(projectId: pid, name: "phpstan")?.state == .idle)
+    }
 }
