@@ -6,6 +6,7 @@ enum CheckKind: CaseIterable, Hashable {
     case pullRequest    // gh pr list for the branch
     case ciChecks       // gh pr checks -> ChecksLineView
     case processStatus  // daemon status probes
+    case workingTree    // local working-tree fingerprint -> test staleness
 }
 
 /// Polling tiers, fastest first. `Instant` is not a tier; it is an event-driven
@@ -28,6 +29,7 @@ enum CheckTier: Equatable {
 /// tier faster, cumulatively, clamped at Fast: CI-pending bumps the CI check only;
 /// needs-attention bumps any check.
 func checkTier(for kind: CheckKind, collapsed: Bool, ciPending: Bool, needsAttention: Bool) -> CheckTier {
+    if kind == .workingTree { return collapsed ? .slow : .fast }
     var tier: CheckTier = collapsed ? .slow : .normal
     if kind == .ciChecks, ciPending { tier = tier.bumped() }
     if needsAttention { tier = tier.bumped() }
