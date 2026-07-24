@@ -7,14 +7,15 @@ the app.
 
 ## Line
 
-A horizontal, wrapping row of one button per test process plus a trailing
-`ALL` button. Rendered by `WorkspaceCardView` only when the workspace defines
-at least one test (`!tests.isEmpty`); it sits between the CI checks line and
-the Processes/terminal tree, indented with the same leading padding as those
-lines.
+One button per test process flowing (and wrapping) on the left, with an `All`
+button pinned to the top right of the line. Rendered by `WorkspaceCardView`
+only when the workspace defines at least one test (`!tests.isEmpty`); it sits
+between the CI checks line and the Processes/terminal tree, indented with the
+same leading padding as those lines.
 
 ```
-[phpunit]  [feature-tests]  [⟳ npm-test]  [ALL]
+[phpunit]  [feature-tests]  [⟳ npm-test]              [All]
+[extra-test]
 ```
 
 Legend:
@@ -27,11 +28,13 @@ Legend:
 - `⟳` (shown as a spinner overlay, not a literal glyph): the button shows a
   `ProgressView` in place of/alongside its label while the test is running
   (`appearance.running`).
-- `ALL`: a trailing button with neutral styling that runs every test
-  (`onRunAll`); it also spins while any test is running (`anyRunning`).
-- Layout: `TestFlowLayout` wraps buttons onto additional rows left to right
-  when the line would otherwise overflow the card width, so a workspace with
-  many tests doesn't clip.
+- `All`: a button pinned to the top right that runs every test (`onRunAll`).
+  It has neutral styling and never shows a spinner of its own.
+- Layout: the per-test buttons live in a `TestFlowLayout` that fills the width
+  to the left of the `All` button and wraps onto additional rows left to right
+  when they would otherwise overflow, so a workspace with many tests doesn't
+  clip. The `All` button stays in the top right regardless of how many rows the
+  test buttons occupy (the enclosing `HStack` is top-aligned).
 - Click: runs that single test (`onRun`).
 - Context menu per test button: Run (`onRun`); Cancel (`test.kill()`), shown
   only while that test is running; Open log (`onOpenLog`, opens a
