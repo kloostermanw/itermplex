@@ -120,7 +120,11 @@ struct ContentView: View {
                     onProcessStop: { $0.stop() },
                     onProcessRestart: { $0.restart() },
                     onProcessKill: { $0.kill() },
-                    onOpenProcessLog: { openProcessLog($0, in: project) }
+                    onOpenProcessLog: { openProcessLog($0, in: project) },
+                    tests: store.testSupervisor.tests(for: project.id),
+                    onTestRun: { store.testSupervisor.run(projectId: project.id, name: $0.name) },
+                    onTestRunAll: { store.testSupervisor.runAll(projectId: project.id) },
+                    onOpenTestLog: { openTestLog($0, in: project) }
                 )
                 .draggable(project.id.uuidString)
                 .dropDestination(for: String.self) { items, _ in
@@ -188,7 +192,11 @@ struct ContentView: View {
                         onProcessStop: { _ in },
                         onProcessRestart: { _ in },
                         onProcessKill: { _ in },
-                        onOpenProcessLog: { _ in }
+                        onOpenProcessLog: { _ in },
+                        tests: [],
+                        onTestRun: { _ in },
+                        onTestRunAll: { },
+                        onOpenTestLog: { _ in }
                     )
                     if project.id != projects.last?.id {
                         Divider()
@@ -319,6 +327,10 @@ struct ContentView: View {
 
     private func openProcessLog(_ process: ManagedProcess, in project: Project) {
         openWindow(id: "process-log", value: ProcessLogWindowID(projectId: project.id, name: process.name))
+    }
+
+    private func openTestLog(_ test: ManagedProcess, in project: Project) {
+        openWindow(id: "process-log", value: ProcessLogWindowID(projectId: project.id, name: test.name, isTest: true))
     }
 
     /// Opens (or focuses) a tab in the shared `remote-terminal` window for a

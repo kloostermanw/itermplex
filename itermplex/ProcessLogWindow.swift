@@ -6,7 +6,9 @@ struct ProcessLogWindow: View {
     let id: ProcessLogWindowID
 
     private var process: ManagedProcess? {
-        store.processes.process(projectId: id.projectId, name: id.name)
+        id.isTest
+            ? store.testSupervisor.test(projectId: id.projectId, name: id.name)
+            : store.processes.process(projectId: id.projectId, name: id.name)
     }
 
     var body: some View {
